@@ -7,10 +7,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Test to check if server is running
 app.get("/api/test", (req, res) => {
   res.json({ message: "Server is running" });
 });
-
+// Get all clients
 app.get("/api/clients", async (req, res) => {
   try {
     const [clients] = await db.query(
@@ -23,7 +24,7 @@ app.get("/api/clients", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch clients from database" });
   }
 });
-
+// Create new client
 app.post("/api/clients", async (req, res) => {
   try {
     const {
@@ -52,7 +53,7 @@ app.post("/api/clients", async (req, res) => {
     res.status(500).json({ error: "Failed to create client" });
   }
 });
-
+// Soft delete client
 app.patch("/api/clients/:id/delete", async (req, res) => {
   try {
     const clientId = req.params.id;
@@ -68,8 +69,24 @@ app.patch("/api/clients/:id/delete", async (req, res) => {
     res.status(500).json({ error: "Failed on soft delete client" });
   }
 });
+// Update client information
+app.put("/api/clients/:id", async (req, res) => {
+  try {
+    const clientID = req.params.id;
+    const { name, contact_number, civil_status } = req.body;
+
+    const query =
+      "UPDATE clients SET name = ?, contact_number = ?, civil_status = ?, updated_at = NOW() WHERE client_id = ?";
+    await db.query(query, [name, contact_number, civil_status, clientID]);
+
+    res.json({ message: `Client ${clientID} updated successfully` });
+  } catch (error) {
+    console.error("Error updating client: ", error);
+    res.status(500).json({ error: "Failed to update client" });
+  }
+});
 
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running on https://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
