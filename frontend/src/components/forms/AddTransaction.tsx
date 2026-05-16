@@ -1,8 +1,32 @@
+// This component provides a form for adding new transactions it allows users to search for available plots,
+// select one, and then input transaction details such as agreed price, downpayment, and payment terms
+// the form dynamically calculates the remaining balance and estimated monthly payments based on user input
+// upon submission, it sends the transaction data to the backend API and updates the plot status accordingly
+
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 export default function AddTransaction({ clientId }: { clientId: string }) {
   const [availablePlots, setAvailablePlots] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     transaction_id: `TXN-${Date.now()}`,
@@ -14,16 +38,15 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
     downpayment: 0,
     monthlypayment: 0,
     remaining_balance: 0,
-    status: "Active",
-    years_to_pay: 1, // Defaulting to 1 year
+    status: "Pending",
+    years_to_pay: 1,
     prepared_by: "Admin",
   });
 
-  // 1. Fetch only AVAILABLE plots
   useEffect(() => {
     const fetchPlots = async () => {
       try {
-        const res = await axios.get("http://localhost:3000/api/inventory");
+        const res = await axios.get("http://localhost:3000/api/plots");
         const available = res.data.filter(
           (plot: any) => plot.status === "Available",
         );
@@ -35,41 +58,39 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
     fetchPlots();
   }, []);
 
-  // 2. Auto-fill defaults AND calculate 25% Downpayment when plot is selected
-  const handlePlotSelection = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedPlotId = e.target.value;
-    const selectedPlot = availablePlots.find(
-      (p) => p.plot_id === selectedPlotId,
-    );
+  useEffect(() => {
+    const totalMonths = formData.years_to_pay * 12;
+    const monthly =
+      formData.remaining_balance > 0
+        ? formData.remaining_balance / totalMonths
+        : 0;
 
-    if (selectedPlot) {
-      const basePrice = Number(selectedPlot.price);
-      const autoDownpayment = basePrice * 0.25; // 25% automatic calculation
+    setFormData((prev) => ({
+      ...prev,
+      monthlypayment: monthly,
+    }));
+  }, [formData.remaining_balance, formData.years_to_pay]);
 
-      setFormData({
-        ...formData,
-        plot_id: selectedPlot.plot_id,
-        plot_type: selectedPlot.plot_type,
-        plot_price: basePrice,
-        downpayment: autoDownpayment,
-        remaining_balance: basePrice - autoDownpayment,
-      });
-    } else {
-      setFormData({
-        ...formData,
-        plot_id: "",
-        plot_type: "",
-        plot_price: 0,
-        downpayment: 0,
-        remaining_balance: 0,
-      });
-    }
+  const handlePlotSelection = (selectedPlot: any) => {
+    const basePrice = Number(selectedPlot.price) || 0;
+    const autoDownpayment = basePrice * 0.25;
+
+    setFormData((prev) => ({
+      ...prev,
+      plot_id: selectedPlot.plot_id,
+      plot_type: selectedPlot.plot_type || "",
+      plot_size: selectedPlot.plot_size || selectedPlot.size || prev.plot_size,
+      plot_price: basePrice,
+      downpayment: autoDownpayment,
+      remaining_balance: basePrice - autoDownpayment,
+    }));
+
+    setOpen(false);
   };
 
-  // 3. Recalculate 25% Downpayment and Balance if staff edits the Agreed Price
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newPrice = parseFloat(e.target.value) || 0;
-    const autoDownpayment = newPrice * 0.25; // Recalculates 25% based on new custom price
+    const autoDownpayment = newPrice * 0.25;
 
     setFormData({
       ...formData,
@@ -79,7 +100,6 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
     });
   };
 
-  // 4. Recalculate balance if staff overrides the downpayment (e.g., client pays 50% upfront)
   const handleDownpaymentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const customDownpayment = parseFloat(e.target.value) || 0;
     setFormData({
@@ -103,48 +123,100 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {/* SMART DROPDOWN */}
-      <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-blue-700">
-          Select Available Plot
-        </label>
-        <select
-          className="border-2 border-blue-400 p-2 rounded bg-blue-50 font-bold"
-          value={formData.plot_id}
-          onChange={handlePlotSelection}
-          required
-        >
-          <option value="">-- Choose a Plot --</option>
-          {availablePlots.map((plot) => (
-            <option key={plot.plot_id} value={plot.plot_id}>
-              {plot.plot_id} ({plot.plot_type}) - Base: ₱
-              {Number(plot.price).toLocaleString()}
-            </option>
-          ))}
-        </select>
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Search dropdown for available plots */}
+      <div className="flex flex-col gap-2">
+        <Label className="text-sm font-semibold text-[#1e293b]">
+          Search Available Plot
+        </Label>
+
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              className="w-full justify-between border border-gray-300 bg-white font-medium hover:bg-gray-50 shadow-sm"
+            >
+              {formData.plot_id ? (
+                <span className="text-[#4a5a4a] font-bold">
+                  {formData.plot_id} ({formData.plot_type})
+                </span>
+              ) : (
+                <span className="text-gray-500">
+                  Search block, lot, or ID...
+                </span>
+              )}
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          {/* The dropdown content that appears when the user clicks the search button
+              allowing them to select from available plots */}
+          <PopoverContent
+            className="w-[400px] p-0 bg-white border border-gray-200 shadow-xl rounded-md"
+            align="start"
+          >
+            <Command className="bg-white rounded-md">
+              <CommandInput
+                placeholder="Search plot..."
+                className="border-none focus:ring-0"
+              />
+              <CommandList className="bg-white">
+                <CommandEmpty>No plot found.</CommandEmpty>
+                <CommandGroup className="bg-white">
+                  {availablePlots.map((plot) => (
+                    <CommandItem
+                      key={plot.plot_id}
+                      value={`${plot.plot_id} ${plot.plot_type}`}
+                      onSelect={() => handlePlotSelection(plot)}
+                      className="cursor-pointer hover:bg-gray-100 aria-selected:bg-gray-100 text-gray-800"
+                    >
+                      <Check
+                        className={cn(
+                          "mr-2 h-4 w-4 text-[#4a5a4a]",
+                          formData.plot_id === plot.plot_id
+                            ? "opacity-100"
+                            : "opacity-0",
+                        )}
+                      />
+                      <div className="flex justify-between w-full">
+                        <span className="font-bold">{plot.plot_id}</span>
+                        <span className="text-gray-500 text-sm">
+                          {plot.plot_type} -{" "}
+                          <span className="text-[#4a5a4a] font-bold">
+                            ₱{Number(plot.price).toLocaleString()}
+                          </span>
+                        </span>
+                      </div>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-gray-500">
+        <div className="flex flex-col gap-2">
+          <Label className="text-sm font-semibold text-gray-700">
             Plot Type
-          </label>
-          <input
+          </Label>
+          <Input
             type="text"
-            className="border p-2 rounded bg-gray-100"
+            className="bg-gray-100 border-gray-300 text-gray-500 font-medium"
             value={formData.plot_type}
             readOnly
           />
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold text-gray-800">
+        <div className="flex flex-col gap-2">
+          <Label className="text-sm font-semibold text-gray-700">
             Plot Size
-          </label>
-          <input
+          </Label>
+          <Input
             type="text"
-            className="border p-2 rounded"
+            className="bg-white border-gray-300 shadow-sm"
             value={formData.plot_size}
             onChange={(e) =>
               setFormData({ ...formData, plot_size: e.target.value })
@@ -154,16 +226,16 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
         </div>
       </div>
 
-      <hr className="my-2" />
+      <hr className="border-gray-200" />
 
-      {/* Editable Agreed Price */}
-      <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold text-gray-800">
+      {/* Editable Price */}
+      <div className="flex flex-col gap-2">
+        <Label className="text-sm font-semibold text-gray-700">
           Agreed Price (₱)
-        </label>
-        <input
+        </Label>
+        <Input
           type="number"
-          className="border p-2 rounded bg-green-50"
+          className="bg-white border-gray-300 font-bold text-lg h-12 shadow-sm"
           value={formData.plot_price}
           onChange={handlePriceChange}
           required
@@ -171,21 +243,27 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold">Downpayment (₱)</label>
-          <input
+        <div className="flex flex-col gap-2">
+          <Label className="text-sm font-semibold text-gray-700">
+            Downpayment (₱)
+          </Label>
+          <Input
             type="number"
-            className="border p-2 rounded"
+            className="bg-white border-gray-300 shadow-sm"
             value={formData.downpayment}
             onChange={handleDownpaymentChange}
             required
           />
-          <p className="text-[10px] text-gray-500">Auto-calculated at 25%</p>
+          <p className="text-[10px] text-gray-400 font-medium">
+            Auto-calculated at 25%
+          </p>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-semibold">Years to Pay</label>
+        <div className="flex flex-col gap-2">
+          <Label className="text-sm font-semibold text-gray-700">
+            Years to Pay
+          </Label>
           <select
-            className="border p-2 rounded bg-white"
+            className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a] text-gray-800"
             value={formData.years_to_pay}
             onChange={(e) =>
               setFormData({
@@ -194,27 +272,45 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
               })
             }
           >
-            {/* UPDATED: Only 1 or 2 years allowed */}
-            <option value={1}>1 Year</option>
-            <option value={2}>2 Years (Max)</option>
+            <option value={1}>1 Year (12 mos)</option>
+            <option value={2}>2 Years (24 mos)</option>
           </select>
         </div>
       </div>
 
-      {/* Dynamic Remaining Balance */}
-      <div className="bg-red-50 p-4 rounded-lg border border-red-100 mt-2">
-        <p className="text-sm text-red-700 font-semibold">Remaining Balance</p>
-        <p className="text-2xl font-bold text-red-900">
-          ₱{Number(formData.remaining_balance).toLocaleString()}
-        </p>
+      {/* Dynamic Breakdown Display */}
+      <div className="bg-[#f5f0e6] p-5 rounded-xl border border-[#e8dfce] mt-2 flex justify-between items-center shadow-sm">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-[#7a6a4f] font-bold mb-1">
+            Remaining Balance
+          </p>
+          <p className="text-2xl font-bold text-[#4a5a4a]">
+            ₱{Number(formData.remaining_balance).toLocaleString()}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs uppercase tracking-wider text-[#7a6a4f] font-bold mb-1">
+            Est. Monthly{" "}
+            <span className="lowercase normal-case font-medium">
+              ({formData.years_to_pay * 12} mos)
+            </span>
+          </p>
+          <p className="text-xl font-bold text-[#4a5a4a]">
+            ₱
+            {Number(formData.monthlypayment).toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </p>
+        </div>
       </div>
 
-      <button
+      <Button
         type="submit"
-        className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition mt-4"
+        className="w-full bg-[#4a5a4a] text-white font-bold py-6 rounded-lg hover:bg-[#3a4a3f] transition mt-2 shadow-sm"
       >
         Confirm Transaction
-      </button>
+      </Button>
     </form>
   );
 }

@@ -1,18 +1,25 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import axios from "axios";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Trash2Icon, Pencil, Eye } from "lucide-react";
+import { toast } from "sonner";
+import {
+  Trash2,
+  Pencil,
+  Eye,
+  Plus,
+  Search,
+  MoreHorizontal,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -21,43 +28,90 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
-// Defining Client type to match the structure of client data we expect from the backend
+import Sidebar from "../../components/custom/Sidebar";
+import { useAddress } from "../../hooks/useAddress";
+
+// Form Components
+import AddClientSheet from "../../components/forms/AddClientSheet";
+import EditClientSheet from "../../components/forms/EditClientSheet";
+
 type Client = {
   client_id: string;
-  name: string;
+  first_name: string;
+  middle_name: string;
+  last_name: string;
   birthdate: Date;
   civil_status: string;
   contact_number: string;
-  address: string;
+  province: string;
+  city: string;
+  barangay: string;
 };
 
 function ClientPage() {
   const queryClient = useQueryClient();
-  // Controls the visibility of the Add and Edit dialogs
+  const navigate = useNavigate();
+
+  // Custom UI
+  const currentPath = window.location.pathname;
+  const userName = localStorage.getItem("userName") || "Admin User";
+  const userRole = localStorage.getItem("userRole") || "Admin";
+
+  // Sheet
   const [isOpen, setIsOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
-  const navigate = useNavigate();
+  // Search and filter
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCivilStatus, setFilterCivilStatus] = useState("All");
 
-  // state for Add form
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("userName");
+    localStorage.removeItem("userRole");
+    window.location.href = "/";
+  };
+
+  // Address data
+  const [selectedProvince, setSelectedProvince] = useState<string>("");
+  const [selectedCity, setSelectedCity] = useState<string>("");
+  const [selectedBarangay, setSelectedBarangay] = useState<string>("");
+  const { provinces, cities, barangays } = useAddress(
+    selectedProvince,
+    selectedCity,
+    selectedBarangay,
+  );
+
+  // Add form
   const [formData, setFormData] = useState({
-    client_id: "",
-    name: "",
+    first_name: "",
+    last_name: "",
+    middle_name: "",
     birthdate: new Date(),
     civil_status: "",
     contact_number: "",
-    address: "",
-  });
-  // state for Edit form
-  const [editFormData, setEditFormData] = useState({
-    client_id: "",
-    name: "",
-    civil_status: "",
-    contact_number: "",
+    province: "",
+    city: "",
+    barangay: "",
   });
 
-  // Fetching Array of Clients from the backend
+  // Edit form
+  const [editFormData, setEditFormData] = useState({
+    client_id: "",
+    first_name: "",
+    middle_name: "",
+    last_name: "",
+    civil_status: "",
+    contact_number: "",
+    birthdate: new Date(),
+    province: "",
+    city: "",
+    barangay: "",
+  });
+
+  // Fetch clients from the backend
   const {
     data: clients = [],
     isLoading,
@@ -70,89 +124,152 @@ function ClientPage() {
     },
   });
 
-  // Handles the Add Client request
+  // Add client mutation
   const addClientMutation = useMutation({
     mutationFn: async (newClient: typeof formData) => {
-      return await axios.post("http://localhost:3000/api/clients", newClient);
+      const currentYear = new Date().getFullYear().toString().slice(-2);
+      const randomNumbers = Math.floor(10000 + Math.random() * 90000);
+      const generatedClientId = `${currentYear}-${randomNumbers}`;
+      const selectedProvName =
+        provinces?.find((p: { code: string }) => p.code === selectedProvince)
+          ?.name || "";
+      const selectedCityName =
+        cities?.find((c: { code: string }) => c.code === selectedCity)?.name ||
+        "";
+      const selectedBrgyName =
+        barangays?.find((b: { code: string }) => b.code === selectedBarangay)
+          ?.name || "";
+
+      return await axios.post("http://localhost:3000/api/clients", {
+        client_id: generatedClientId,
+        ...newClient,
+        province: selectedProvName,
+        city: selectedCityName,
+        barangay: selectedBrgyName,
+      });
     },
     onSuccess: () => {
-      // This single line replaces your old fetchClients()!
       queryClient.invalidateQueries({ queryKey: ["clients"] });
 
       setIsOpen(false);
       setFormData({
-        client_id: "",
-        name: "",
+        first_name: "",
+        last_name: "",
+        middle_name: "",
         birthdate: new Date(),
         civil_status: "",
         contact_number: "",
-        address: "",
+        province: "",
+        city: "",
+        barangay: "",
+      });
+      setSelectedProvince("");
+      setSelectedCity("");
+      setSelectedBarangay("");
+
+      toast.success("Client Added", {
+        description: "The new client has been successfully registered.",
       });
     },
     onError: (error) => {
       console.error("Error saving client:", error);
-      alert("Failed to add client. Make sure the ID is unique!");
+      toast.error("Error", {
+        description: "Failed to add client. Please try again.",
+      });
     },
   });
-  // Handles the Edit Client request
+
+  // Edit client mutation
   const editClientMutation = useMutation({
     mutationFn: async (updatedClient: typeof editFormData) => {
       return await axios.put(
         `http://localhost:3000/api/clients/${updatedClient.client_id}`,
         {
-          name: updatedClient.name,
+          first_name: updatedClient.first_name,
+          middle_name: updatedClient.middle_name,
+          last_name: updatedClient.last_name,
           civil_status: updatedClient.civil_status,
           contact_number: updatedClient.contact_number,
+          birthdate: updatedClient.birthdate,
+          province: updatedClient.province,
+          city: updatedClient.city,
+          barangay: updatedClient.barangay,
         },
       );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       setIsEditOpen(false);
+
+      toast.success("Client Updated", {
+        description: "Changes saved successfully.",
+      });
     },
     onError: (error) => {
       console.error("Error updating client:", error);
-      alert("Failed to update client");
+      toast.error("Error", {
+        description: "Failed to update client details.",
+      });
     },
   });
-  // Handles the Soft Delete equest
+
+  // Delete client mutation
   const deleteClientMutation = useMutation({
-    mutationFn: async (clientID: String) => {
+    mutationFn: async (clientID: string) => {
       return await axios.patch(
         `http://localhost:3000/api/clients/${clientID}/delete`,
       );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+
+      toast.success("Client Removed", {
+        description: "Client has been soft-deleted.",
+      });
     },
     onError: (error) => {
       console.error("Error deleting client:", error);
-      alert("Failed to delete client. Try again later.");
+      toast.error("Error", {
+        description: "Could not delete client.",
+      });
     },
   });
 
-  // Called when Add/Edit form is submitted
   const handleAddClient = (e: React.FormEvent) => {
     e.preventDefault();
     addClientMutation.mutate(formData);
   };
+
   const handleEditClient = (e: React.FormEvent) => {
     e.preventDefault();
     editClientMutation.mutate(editFormData);
   };
 
-  // If the data is still loading, show a loading message
+  // Filtering clients by search and status
+  const filteredClients = useMemo(() => {
+    return clients.filter((client) => {
+      const matchesSearch =
+        client.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.client_id.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCivil =
+        filterCivilStatus === "All" ||
+        client.civil_status?.toLowerCase() === filterCivilStatus.toLowerCase();
+      return matchesSearch && matchesCivil;
+    });
+  }, [clients, searchTerm, filterCivilStatus]);
+
   if (isLoading) {
     return (
-      <div className="p-10 text-xl font-bold text-slate-700">
+      <div className="flex items-center justify-center h-screen bg-[#faf8f5] text-xl font-bold text-slate-700">
         Loading cemetery records...
       </div>
     );
   }
-  // If there was an error fetching the data, show an error message
+
   if (isError) {
     return (
-      <div className="p-10 text-xl font-bold text-red-500">
+      <div className="flex items-center justify-center h-screen bg-[#faf8f5] text-xl font-bold text-red-500">
         Error: Could not connect to the database. Is your Express server
         running?
       </div>
@@ -160,237 +277,271 @@ function ClientPage() {
   }
 
   return (
-    <div className="container mx-auto p-10 max-w-5xl">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">Cemetery Clients</h1>
-        {/* Responsible for Adding */}
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogTrigger asChild>
-            <Button>+ Add New Client</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px] bg-white">
-            <DialogHeader>
-              <DialogTitle>Add New Client</DialogTitle>
-            </DialogHeader>
+    <div className="flex h-screen overflow-hidden bg-[#faf8f5] font-sans">
+      <Sidebar
+        userRole={userRole}
+        userName={userName}
+        activePath={currentPath}
+        onNavigate={(path) => navigate(path)}
+        onLogout={handleLogout}
+      />
 
-            <form
-              onSubmit={handleAddClient}
-              className="flex flex-col gap-4 mt-4"
-            >
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="client_id">Client ID</Label>
-                <Input
-                  id="client_id"
-                  placeholder="e.g. C-003"
-                  value={formData.client_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, client_id: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  placeholder="John Doe"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="birthdate">Birthdate</Label>
-                <Input
-                  id="birthdate"
-                  value={formData.birthdate.toISOString().split("T")[0]}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      birthdate: new Date(e.target.value),
-                    })
-                  }
-                  type="date"
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="contact">Contact Number</Label>
-                <Input
-                  id="contact"
-                  placeholder="09123456789"
-                  value={formData.contact_number}
-                  onChange={(e) =>
-                    setFormData({ ...formData, contact_number: e.target.value })
-                  }
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="status">Civil Status</Label>
-                <Input
-                  id="status"
-                  placeholder="Single, Married, etc."
-                  value={formData.civil_status}
-                  onChange={(e) =>
-                    setFormData({ ...formData, civil_status: e.target.value })
-                  }
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="address">Address</Label>
-                <Input
-                  id="address"
-                  placeholder="123 Main St."
-                  value={formData.address}
-                  onChange={(e) =>
-                    setFormData({ ...formData, address: e.target.value })
-                  }
-                />
-              </div>
-              <Button type="submit" className="mt-4">
-                Save Client
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-        {/* Responsible for Editing */}
-        <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-          <DialogContent className="sm:max-w-[425px] bg-white">
-            <DialogHeader>
-              <DialogTitle>Edit Client</DialogTitle>
-            </DialogHeader>
+      <main className="flex-1 overflow-y-auto p-10">
+        {/* Header section */}
+        <div className="flex items-start justify-between mb-8">
+          <div>
+            <h2 className="text-3xl font-bold text-[#1e293b] mb-1">Clients</h2>
+            <p className="text-gray-500 text-sm">
+              Manage and view all registered cemetery clients.
+            </p>
+          </div>
+        </div>
 
-            <form
-              onSubmit={handleEditClient}
-              className="flex flex-col gap-4 mt-4"
-            >
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="edit_name">Full Name</Label>
-                <Input
-                  id="edit_name"
-                  value={editFormData.name}
-                  onChange={(e) =>
-                    setEditFormData({ ...editFormData, name: e.target.value })
-                  }
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="edit_contact">Contact Number</Label>
-                <Input
-                  id="edit_contact"
-                  value={editFormData.contact_number}
-                  onChange={(e) =>
-                    setEditFormData({
-                      ...editFormData,
-                      contact_number: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="edit_status">Civil Status</Label>
-                <Input
-                  id="edit_status"
-                  value={editFormData.civil_status}
-                  onChange={(e) =>
-                    setEditFormData({
-                      ...editFormData,
-                      civil_status: e.target.value,
-                    })
-                  }
-                />
-              </div>
-              <Button type="submit" className="mt-4">
-                Save Changes
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+        {/* Toolbar */}
+        <div className="flex items-center gap-4 mb-6">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search clients..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 bg-white border-gray-200 h-10 shadow-sm rounded-md"
+            />
+          </div>
 
-      <div className="rounded-md border bg-white shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[150px]">Client ID</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Contact</TableHead>
-              <TableHead>Civil Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {clients.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="h-24 text-center text-slate-500"
-                >
-                  No clients found.
-                </TableCell>
+          <select
+            className="h-10 px-3 py-2 bg-white border border-gray-200 rounded-md text-sm shadow-sm outline-none text-gray-700 min-w-[140px]"
+            value={filterCivilStatus}
+            onChange={(e) => setFilterCivilStatus(e.target.value)}
+          >
+            <option value="All">Civil Status</option>
+            <option value="Single">Single</option>
+            <option value="Married">Married</option>
+            <option value="Widowed">Widowed</option>
+          </select>
+
+          {/* Add client button */}
+          <Button
+            onClick={() => setIsOpen(true)}
+            className="bg-[#4a5a4a] hover:bg-[#3a4a3f] text-white shadow-sm h-10"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add Client
+          </Button>
+        </div>
+
+        {/* Client table */}
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          <Table>
+            <TableHeader className="bg-[#f5f0e6]">
+              <TableRow className="hover:bg-transparent border-b-gray-200">
+                <TableHead className="font-semibold text-gray-800 py-4 pl-6">
+                  Client ID
+                </TableHead>
+                <TableHead className="font-semibold text-gray-800 py-4">
+                  Name
+                </TableHead>
+                <TableHead className="font-semibold text-gray-800 py-4">
+                  Contact
+                </TableHead>
+                <TableHead className="font-semibold text-gray-800 py-4">
+                  Civil Status
+                </TableHead>
+                <TableHead className="font-semibold text-gray-800 py-4 text-center pr-6 w-24">
+                  Actions
+                </TableHead>
               </TableRow>
-            ) : (
-              clients.map((client) => (
-                <TableRow key={client.client_id}>
-                  <TableCell className="font-medium">
-                    {client.client_id}
-                  </TableCell>
-                  <TableCell>{client.name}</TableCell>
-                  <TableCell>{client.contact_number}</TableCell>
-                  <TableCell>{client.civil_status}</TableCell>
-                  <TableCell className="text-right flex justify-end gap-2">
-                    {/* View Button */}
-                    <Button
-                      variant="default"
-                      size="icon"
-                      onClick={() => navigate(`/clients/${client.client_id}`)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    {/* Edit Button */}
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        // When Edit is clicked, pre-filled the current client data
-                        setEditFormData({
-                          client_id: client.client_id,
-                          name: client.name,
-                          contact_number: client.contact_number,
-                          civil_status: client.civil_status,
-                        });
-                        setIsEditOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-
-                    {/* Delete Button */}
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Are you sure you want to remove ${client.name}?`,
-                          )
-                        ) {
-                          deleteClientMutation.mutate(client.client_id);
-                        }
-                      }}
-                    >
-                      <Trash2Icon className="h-4 w-4" />
-                    </Button>
+            </TableHeader>
+            <TableBody>
+              {filteredClients.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="h-32 text-center text-gray-500"
+                  >
+                    No clients found matching your search.
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ) : (
+                filteredClients.map((client) => {
+                  const fullName =
+                    `${client.first_name} ${client.middle_name ? client.middle_name + " " : ""}${client.last_name}`.trim();
+
+                  return (
+                    <TableRow
+                      key={client.client_id}
+                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    >
+                      <TableCell className="py-4 pl-6 text-gray-600 font-medium">
+                        {client.client_id}
+                      </TableCell>
+
+                      <TableCell className="py-4 text-gray-800">
+                        {fullName}
+                      </TableCell>
+
+                      <TableCell className="py-4 text-gray-600">
+                        {client.contact_number}
+                      </TableCell>
+                      <TableCell className="py-4">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "rounded border-none font-medium px-2.5 py-0.5",
+                            client.civil_status?.toLowerCase() === "single"
+                              ? "bg-[#e4ebd8] text-[#4a5a4a]"
+                              : client.civil_status?.toLowerCase() === "married"
+                                ? "bg-[#e4ebd8] text-[#4a5a4a]"
+                                : "bg-[#f0e3cc] text-[#7a6a4f]",
+                          )}
+                        >
+                          {client.civil_status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="py-4 pr-6 text-center">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                            >
+                              <MoreHorizontal className="h-5 w-5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="bg-white border border-gray-200 rounded-md shadow-lg py-1"
+                          >
+                            <DropdownMenuItem
+                              className="cursor-pointer text-gray-700"
+                              onClick={() =>
+                                navigate(`/clients/${client.client_id}`)
+                              }
+                            >
+                              <Eye className="mr-2 h-4 w-4" />
+                              <span>View</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem
+                              className="cursor-pointer text-gray-700"
+                              onClick={() => {
+                                setEditFormData({
+                                  client_id: client.client_id,
+                                  first_name: client.first_name,
+                                  middle_name: client.middle_name || "",
+                                  last_name: client.last_name,
+                                  contact_number: client.contact_number,
+                                  civil_status: client.civil_status,
+                                  birthdate: client.birthdate,
+                                  province: client.province,
+                                  city: client.city,
+                                  barangay: client.barangay,
+                                });
+
+                                setSelectedProvince(client.province);
+                                setSelectedCity(client.city);
+                                setSelectedBarangay(client.barangay);
+
+                                setIsEditOpen(true);
+                              }}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              <span>Edit</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem
+                              className="cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-50"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Are you sure you want to remove ${fullName}?`,
+                                  )
+                                ) {
+                                  deleteClientMutation.mutate(client.client_id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Pagination footer */}
+        <div className="flex items-center justify-between mt-6 text-sm text-gray-500">
+          <span>
+            Showing 1 to {filteredClients.length} of {filteredClients.length}{" "}
+            entries
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 bg-white border-gray-200 text-gray-400"
+            >
+              &lt;
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 bg-[#4a5a4a] text-white hover:bg-[#3a4a3f]"
+            >
+              1
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 bg-white border-gray-200 text-gray-400"
+            >
+              &gt;
+            </Button>
+          </div>
+        </div>
+      </main>
+
+      {/* Extracted sheets */}
+      <AddClientSheet
+        isOpen={isOpen}
+        setIsOpen={setIsOpen}
+        formData={formData}
+        setFormData={setFormData}
+        handleAddClient={handleAddClient}
+        provinces={provinces}
+        cities={cities}
+        barangays={barangays}
+        selectedProvince={selectedProvince}
+        setSelectedProvince={setSelectedProvince}
+        selectedCity={selectedCity}
+        setSelectedCity={setSelectedCity}
+        selectedBarangay={selectedBarangay}
+        setSelectedBarangay={setSelectedBarangay}
+        isPending={addClientMutation.isPending}
+      />
+
+      <EditClientSheet
+        isOpen={isEditOpen}
+        setIsOpen={setIsEditOpen}
+        editFormData={editFormData}
+        setEditFormData={setEditFormData}
+        handleEditClient={handleEditClient}
+        provinces={provinces}
+        cities={cities}
+        barangays={barangays}
+        selectedProvince={selectedProvince}
+        setSelectedProvince={setSelectedProvince}
+        selectedCity={selectedCity}
+        setSelectedCity={setSelectedCity}
+        selectedBarangay={selectedBarangay}
+        setSelectedBarangay={setSelectedBarangay}
+        isPending={editClientMutation.isPending}
+      />
     </div>
   );
 }

@@ -14,7 +14,7 @@ router.post("/", async (req, res) => {
     } = req.body;
     const payment_id = `PAY-${Date.now()}`;
 
-    // 1. Insert the payment record
+    // Insert a new payment record
     await db.query(
       "INSERT INTO payments (payment_id, transaction_id, amount_paid, payment_method, reference_number, recorded_by) VALUES (?, ?, ?, ?, ?, ?)",
       [
@@ -27,18 +27,19 @@ router.post("/", async (req, res) => {
       ],
     );
 
-    // 2. Subtract the amount from the transaction's remaining balance
+    // Update the transaction's remaining balance
     await db.query(
       "UPDATE transactions SET remaining_balance = remaining_balance - ? WHERE transaction_id = ?",
       [amount_paid, transaction_id],
     );
 
-    // 3. Check if the balance hit zero, and update status if it did
+    // Check if the transaction is fully paid and update status if necessary
     const [updatedTxn] = await db.query(
       "SELECT remaining_balance FROM transactions WHERE transaction_id = ?",
       [transaction_id],
     );
 
+    // If the remaining balance is zero or less, mark the transaction as Completed
     if (updatedTxn[0].remaining_balance <= 0) {
       await db.query(
         "UPDATE transactions SET status = 'Completed', remaining_balance = 0 WHERE transaction_id = ?",

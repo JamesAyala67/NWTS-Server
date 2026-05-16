@@ -1,45 +1,63 @@
+// This component allows users to add a payment for a specific transaction
+// it includes form validation to ensure the payment amount does not exceed the remaining balance
+// and provides feedback on successful or failed payment recording
+
 import { useState } from "react";
 import axios from "axios";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export default function AddPayment({
   transactionId,
   currentBalance,
+  onSuccess,
 }: {
   transactionId: string;
   currentBalance: number;
+  onSuccess: () => void;
 }) {
+  const queryClient = useQueryClient();
+
   const [formData, setFormData] = useState({
     amount_paid: 0,
     payment_method: "Cash",
     reference_number: "",
-    recorded_by: "Admin", // In a real app, this is the logged-in user
+    recorded_by: "Admin",
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Safety check: Prevent overpayment
-    if (formData.amount_paid > currentBalance) {
-      alert("Error: Payment amount cannot exceed the remaining balance!");
-      return;
-    }
-
-    if (formData.amount_paid <= 0) {
-      alert("Please enter a valid amount.");
-      return;
-    }
-
-    try {
-      await axios.post("http://localhost:3000/api/payments", {
-        ...formData,
-        transaction_id: transactionId,
-      });
+  // Save payment
+  const paymentMutation = useMutation({
+    mutationFn: (newPayment: any) => {
+      return axios.post("http://localhost:3000/api/payments", newPayment);
+    },
+    onSuccess: () => {
       alert("Payment successfully recorded!");
-      window.location.reload(); // Refresh to see the updated balance
-    } catch (error) {
+      // Invalidate transactions query to refresh data
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      onSuccess();
+    },
+    onError: (error) => {
       console.error("Error saving payment:", error);
       alert("Failed to record payment. Check the console.");
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (formData.amount_paid > currentBalance) {
+      return alert(
+        "Error: Payment amount cannot exceed the remaining balance!",
+      );
     }
+    if (formData.amount_paid <= 0) {
+      return alert("Please enter a valid amount.");
+    }
+
+    // Trigger the mutation
+    paymentMutation.mutate({
+      ...formData,
+      transaction_id: transactionId,
+    });
   };
 
   return (
@@ -56,7 +74,7 @@ export default function AddPayment({
         <label className="text-sm font-semibold">Payment Amount (₱)</label>
         <input
           type="number"
-          max={currentBalance} // HTML validation to stop overpayment
+          max={currentBalance}
           className="border p-2 rounded"
           value={formData.amount_paid}
           onChange={(e) =>
@@ -102,9 +120,10 @@ export default function AddPayment({
 
       <button
         type="submit"
-        className="w-full bg-green-600 text-white font-bold py-2 px-4 rounded hover:bg-green-700 transition mt-4"
+        disabled={paymentMutation.isPending}
+        className="w-full bg-green-600 text-white font-bold py-2 px-4 rounded hover:bg-green-700 transition mt-4 disabled:opacity-50"
       >
-        Record Payment
+        {paymentMutation.isPending ? "Recording..." : "Record Payment"}
       </button>
     </form>
   );

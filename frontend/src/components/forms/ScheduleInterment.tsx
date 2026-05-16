@@ -1,5 +1,11 @@
+// This component allows users to schedule an interment for a specific plot and transaction
+// it collects necessary details about the deceased and the interment date,
+// then submits this information to the backend API, upon successful scheduling
+// it updates the UI to reflect the new interment and marks the plot as occupied
+
 import { useState } from "react";
 import axios from "axios";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface ScheduleIntermentProps {
   plotId: string;
@@ -12,26 +18,42 @@ export default function ScheduleInterment({
   transactionId,
   onSuccess,
 }: ScheduleIntermentProps) {
+  const queryClient = useQueryClient();
+
+  // Updated to match database columns
   const [formData, setFormData] = useState({
     plot_id: plotId,
     transaction_id: transactionId,
-    deceased_name: "",
+    first_name: "",
+    middle_name: "",
+    last_name: "",
     date_of_birth: "",
     date_of_death: "",
     date_of_interment: "",
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await axios.post("http://localhost:3000/api/interments", formData);
+  const intermentMutation = useMutation({
+    mutationFn: (newInterment: typeof formData) => {
+      return axios.post("http://localhost:3000/api/interments", newInterment);
+    },
+    onSuccess: () => {
       alert(
         "Interment successfully scheduled! Plot is now marked as Occupied.",
       );
-      onSuccess(); // Close the drawer/refresh data
-    } catch (error) {
+      // Invalidate both transactions and plots queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["plots"] });
+      onSuccess();
+    },
+    onError: (error) => {
+      console.error("Error scheduling interment:", error);
       alert("Failed to schedule interment.");
-    }
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    intermentMutation.mutate(formData);
   };
 
   return (
@@ -60,25 +82,56 @@ export default function ScheduleInterment({
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-sm font-semibold">Deceased Full Name</label>
-        <input
-          type="text"
-          className="border p-2 rounded"
-          placeholder="e.g., Juan Dela Cruz"
-          onChange={(e) =>
-            setFormData({ ...formData, deceased_name: e.target.value })
-          }
-          required
-        />
+      {/* Deceased Name Fields */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-4">
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-semibold">First Name</label>
+          <input
+            type="text"
+            className="border p-2 rounded"
+            placeholder="e.g., Juan"
+            value={formData.first_name}
+            onChange={(e) =>
+              setFormData({ ...formData, first_name: e.target.value })
+            }
+            required
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-semibold">Middle Name</label>
+          <input
+            type="text"
+            className="border p-2 rounded"
+            placeholder="e.g., Santos"
+            value={formData.middle_name}
+            onChange={(e) =>
+              setFormData({ ...formData, middle_name: e.target.value })
+            }
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-semibold">Last Name</label>
+          <input
+            type="text"
+            className="border p-2 rounded"
+            placeholder="e.g., Dela Cruz"
+            value={formData.last_name}
+            onChange={(e) =>
+              setFormData({ ...formData, last_name: e.target.value })
+            }
+            required
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      {/* Dates fields */}
+      <div className="grid grid-cols-2 gap-4 border-t pt-4">
         <div className="flex flex-col gap-1">
           <label className="text-sm font-semibold">Date of Birth</label>
           <input
             type="date"
             className="border p-2 rounded"
+            value={formData.date_of_birth}
             onChange={(e) =>
               setFormData({ ...formData, date_of_birth: e.target.value })
             }
@@ -90,6 +143,7 @@ export default function ScheduleInterment({
           <input
             type="date"
             className="border p-2 rounded"
+            value={formData.date_of_death}
             onChange={(e) =>
               setFormData({ ...formData, date_of_death: e.target.value })
             }
@@ -105,6 +159,7 @@ export default function ScheduleInterment({
         <input
           type="date"
           className="border-2 border-blue-400 p-2 rounded bg-blue-50"
+          value={formData.date_of_interment}
           onChange={(e) =>
             setFormData({ ...formData, date_of_interment: e.target.value })
           }
@@ -114,9 +169,12 @@ export default function ScheduleInterment({
 
       <button
         type="submit"
-        className="w-full bg-indigo-600 text-white font-bold py-3 rounded hover:bg-indigo-700 transition mt-4"
+        disabled={intermentMutation.isPending}
+        className="w-full bg-indigo-600 text-white font-bold py-3 rounded hover:bg-indigo-700 transition mt-4 disabled:opacity-50"
       >
-        Confirm & Schedule Interment
+        {intermentMutation.isPending
+          ? "Scheduling..."
+          : "Confirm & Schedule Interment"}
       </button>
     </form>
   );

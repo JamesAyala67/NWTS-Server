@@ -14,42 +14,43 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch interments" });
   }
 });
-
-// Schedule/Record a new interment
+// Schedule an new interment
 router.post("/", async (req, res) => {
   try {
     const {
       plot_id,
       transaction_id,
-      deceased_name,
+      first_name,
+      middle_name,
+      last_name,
       date_of_birth,
       date_of_death,
       date_of_interment,
     } = req.body;
 
-    // 1. Save the deceased person's record
+    // Insert the new interment record
     await db.query(
-      "INSERT INTO interments (plot_id, transaction_id, deceased_name, date_of_birth, date_of_death, date_of_interment) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO interments (plot_id, transaction_id, first_name, middle_name, last_name, date_of_birth, date_of_death, date_of_interment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [
         plot_id,
         transaction_id,
-        deceased_name,
+        first_name,
+        middle_name,
+        last_name,
         date_of_birth,
         date_of_death,
         date_of_interment,
       ],
     );
 
-    // 2. Change the physical plot status to 'Occupied'
+    // Change the plot status to "Occupied"
     await db.query("UPDATE plots SET status = 'Occupied' WHERE plot_id = ?", [
       plot_id,
     ]);
 
-    res
-      .status(201)
-      .json({
-        message: "Interment successfully recorded and plot marked as Occupied!",
-      });
+    res.status(201).json({
+      message: "Interment successfully recorded and plot marked as Occupied!",
+    });
   } catch (error) {
     console.error("Error recording interment:", error);
     res.status(500).json({ error: "Failed to record interment" });
