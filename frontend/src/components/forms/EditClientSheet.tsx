@@ -44,6 +44,7 @@ export default function EditClientSheet({
   barangays,
   setSelectedProvince,
   setSelectedCity,
+  setSelectedBarangay,
   isPending,
 }: EditClientSheetProps) {
   return (
@@ -238,12 +239,13 @@ export default function EditClientSheet({
                   className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm"
                   value={editFormData.barangay}
                   disabled={!editFormData.city}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    setSelectedBarangay(e.target.value);
                     setEditFormData({
                       ...editFormData,
                       barangay: e.target.value,
-                    })
-                  }
+                    });
+                  }}
                   required
                 >
                   <option value="">Select Barangay</option>

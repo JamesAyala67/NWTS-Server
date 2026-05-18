@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import axios from "axios";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -58,6 +58,7 @@ function ClientPage() {
   const currentPath = window.location.pathname;
   const userName = localStorage.getItem("userName") || "Admin User";
   const userRole = localStorage.getItem("userRole") || "Admin";
+  const employeeId = localStorage.getItem("employee_id") || "EMP-001";
 
   // Sheet
   const [isOpen, setIsOpen] = useState(false);
@@ -66,6 +67,10 @@ function ClientPage() {
   // Search and filter
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCivilStatus, setFilterCivilStatus] = useState("All");
+
+  // Table state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -95,6 +100,7 @@ function ClientPage() {
     province: "",
     city: "",
     barangay: "",
+    prepared_by: "",
   });
 
   // Edit form
@@ -123,6 +129,14 @@ function ClientPage() {
       return response.data;
     },
   });
+  // Fetch employees from the backend
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
+      const response = await axios.get("http://localhost:3000/api/employees");
+      return response.data;
+    },
+  });
 
   // Add client mutation
   const addClientMutation = useMutation({
@@ -146,6 +160,9 @@ function ClientPage() {
         province: selectedProvName,
         city: selectedCityName,
         barangay: selectedBrgyName,
+        created_at: new Date().toISOString(),
+
+        employee_id: employeeId,
       });
     },
     onSuccess: () => {
@@ -162,6 +179,7 @@ function ClientPage() {
         province: "",
         city: "",
         barangay: "",
+        prepared_by: employeeId,
       });
       setSelectedProvince("");
       setSelectedCity("");
@@ -182,6 +200,19 @@ function ClientPage() {
   // Edit client mutation
   const editClientMutation = useMutation({
     mutationFn: async (updatedClient: typeof editFormData) => {
+      const provName =
+        provinces?.find(
+          (p: { code: string; name: string }) => p.code === selectedProvince,
+        )?.name || selectedProvince;
+      const cityName =
+        cities?.find(
+          (c: { code: string; name: string }) => c.code === selectedCity,
+        )?.name || selectedCity;
+      const brgyName =
+        barangays?.find(
+          (b: { code: string; name: string }) => b.code === selectedBarangay,
+        )?.name || selectedBarangay;
+
       return await axios.put(
         `http://localhost:3000/api/clients/${updatedClient.client_id}`,
         {
@@ -191,9 +222,10 @@ function ClientPage() {
           civil_status: updatedClient.civil_status,
           contact_number: updatedClient.contact_number,
           birthdate: updatedClient.birthdate,
-          province: updatedClient.province,
-          city: updatedClient.city,
-          barangay: updatedClient.barangay,
+          province: provName,
+          city: cityName,
+          barangay: brgyName,
+          edited_by: employeeId,
         },
       );
     },
@@ -218,6 +250,7 @@ function ClientPage() {
     mutationFn: async (clientID: string) => {
       return await axios.patch(
         `http://localhost:3000/api/clients/${clientID}/delete`,
+        { deleted_by: employeeId },
       );
     },
     onSuccess: () => {
@@ -245,6 +278,10 @@ function ClientPage() {
     editClientMutation.mutate(editFormData);
   };
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterCivilStatus]);
+
   // Filtering clients by search and status
   const filteredClients = useMemo(() => {
     return clients.filter((client) => {
@@ -258,6 +295,13 @@ function ClientPage() {
       return matchesSearch && matchesCivil;
     });
   }, [clients, searchTerm, filterCivilStatus]);
+
+  const paginatedClients = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredClients.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredClients, currentPage]);
+
+  const totalPages = Math.ceil(filteredClients.length / itemsPerPage) || 1;
 
   if (isLoading) {
     return (
@@ -330,175 +374,183 @@ function ClientPage() {
         </div>
 
         {/* Client table */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <Table>
-            <TableHeader className="bg-[#f5f0e6]">
-              <TableRow className="hover:bg-transparent border-b-gray-200">
-                <TableHead className="font-semibold text-gray-800 py-4 pl-6">
-                  Client ID
-                </TableHead>
-                <TableHead className="font-semibold text-gray-800 py-4">
-                  Name
-                </TableHead>
-                <TableHead className="font-semibold text-gray-800 py-4">
-                  Contact
-                </TableHead>
-                <TableHead className="font-semibold text-gray-800 py-4">
-                  Civil Status
-                </TableHead>
-                <TableHead className="font-semibold text-gray-800 py-4 text-center pr-6 w-24">
-                  Actions
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredClients.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="h-32 text-center text-gray-500"
-                  >
-                    No clients found matching your search.
-                  </TableCell>
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+          <div className="overflow-auto max-h-[60vh]">
+            <Table>
+              <TableHeader className="bg-[#f5f0e6] sticky top-0 z-10 shadow-sm">
+                <TableRow className="hover:bg-transparent border-b-gray-200">
+                  <TableHead className="font-semibold text-gray-800 py-4 pl-6">
+                    Client ID
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-800 py-4">
+                    Name
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-800 py-4">
+                    Contact
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-800 py-4">
+                    Civil Status
+                  </TableHead>
+                  <TableHead className="font-semibold text-gray-800 py-4 text-center pr-6 w-24">
+                    Actions
+                  </TableHead>
                 </TableRow>
-              ) : (
-                filteredClients.map((client) => {
-                  const fullName =
-                    `${client.first_name} ${client.middle_name ? client.middle_name + " " : ""}${client.last_name}`.trim();
-
-                  return (
-                    <TableRow
-                      key={client.client_id}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+              </TableHeader>
+              <TableBody>
+                {paginatedClients.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="h-32 text-center text-gray-500"
                     >
-                      <TableCell className="py-4 pl-6 text-gray-600 font-medium">
-                        {client.client_id}
-                      </TableCell>
+                      No clients found matching your search.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedClients.map((client) => {
+                    const fullName =
+                      `${client.first_name} ${client.middle_name ? client.middle_name + " " : ""}${client.last_name}`.trim();
 
-                      <TableCell className="py-4 text-gray-800">
-                        {fullName}
-                      </TableCell>
+                    return (
+                      <TableRow
+                        key={client.client_id}
+                        className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                      >
+                        <TableCell className="py-4 pl-6 text-gray-600 font-medium">
+                          {client.client_id}
+                        </TableCell>
 
-                      <TableCell className="py-4 text-gray-600">
-                        {client.contact_number}
-                      </TableCell>
-                      <TableCell className="py-4">
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "rounded border-none font-medium px-2.5 py-0.5",
-                            client.civil_status?.toLowerCase() === "single"
-                              ? "bg-[#e4ebd8] text-[#4a5a4a]"
-                              : client.civil_status?.toLowerCase() === "married"
+                        <TableCell className="py-4 text-gray-800">
+                          {fullName}
+                        </TableCell>
+
+                        <TableCell className="py-4 text-gray-600">
+                          {client.contact_number}
+                        </TableCell>
+                        <TableCell className="py-4">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "rounded border-none font-medium px-2.5 py-0.5",
+                              client.civil_status?.toLowerCase() === "single"
                                 ? "bg-[#e4ebd8] text-[#4a5a4a]"
-                                : "bg-[#f0e3cc] text-[#7a6a4f]",
-                          )}
-                        >
-                          {client.civil_status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="py-4 pr-6 text-center">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-                            >
-                              <MoreHorizontal className="h-5 w-5" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            className="bg-white border border-gray-200 rounded-md shadow-lg py-1"
+                                : client.civil_status?.toLowerCase() ===
+                                    "married"
+                                  ? "bg-[#e4ebd8] text-[#4a5a4a]"
+                                  : "bg-[#f0e3cc] text-[#7a6a4f]",
+                            )}
                           >
-                            <DropdownMenuItem
-                              className="cursor-pointer text-gray-700"
-                              onClick={() =>
-                                navigate(`/clients/${client.client_id}`)
-                              }
+                            {client.civil_status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-4 pr-6 text-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900 hover:bg-gray-100"
+                              >
+                                <MoreHorizontal className="h-5 w-5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="end"
+                              className="bg-white border border-gray-200 rounded-md shadow-lg py-1"
                             >
-                              <Eye className="mr-2 h-4 w-4" />
-                              <span>View</span>
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem
-                              className="cursor-pointer text-gray-700"
-                              onClick={() => {
-                                setEditFormData({
-                                  client_id: client.client_id,
-                                  first_name: client.first_name,
-                                  middle_name: client.middle_name || "",
-                                  last_name: client.last_name,
-                                  contact_number: client.contact_number,
-                                  civil_status: client.civil_status,
-                                  birthdate: client.birthdate,
-                                  province: client.province,
-                                  city: client.city,
-                                  barangay: client.barangay,
-                                });
-
-                                setSelectedProvince(client.province);
-                                setSelectedCity(client.city);
-                                setSelectedBarangay(client.barangay);
-
-                                setIsEditOpen(true);
-                              }}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              <span>Edit</span>
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem
-                              className="cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-50"
-                              onClick={() => {
-                                if (
-                                  window.confirm(
-                                    `Are you sure you want to remove ${fullName}?`,
-                                  )
-                                ) {
-                                  deleteClientMutation.mutate(client.client_id);
+                              <DropdownMenuItem
+                                className="cursor-pointer text-gray-700"
+                                onClick={() =>
+                                  navigate(`/clients/${client.client_id}`)
                                 }
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                              >
+                                <Eye className="mr-2 h-4 w-4" />
+                                <span>View</span>
+                              </DropdownMenuItem>
+
+                              <DropdownMenuItem
+                                className="cursor-pointer text-gray-700"
+                                onClick={() => {
+                                  setEditFormData({
+                                    client_id: client.client_id,
+                                    first_name: client.first_name,
+                                    middle_name: client.middle_name || "",
+                                    last_name: client.last_name,
+                                    contact_number: client.contact_number,
+                                    civil_status: client.civil_status,
+                                    birthdate: client.birthdate,
+                                    province: client.province,
+                                    city: client.city,
+                                    barangay: client.barangay,
+                                  });
+
+                                  setSelectedProvince(client.province);
+                                  setSelectedCity(client.city);
+                                  setSelectedBarangay(client.barangay);
+
+                                  setIsEditOpen(true);
+                                }}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                <span>Edit</span>
+                              </DropdownMenuItem>
+
+                              <DropdownMenuItem
+                                className="cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-50"
+                                onClick={() => {
+                                  if (
+                                    window.confirm(
+                                      `Are you sure you want to remove ${fullName}?`,
+                                    )
+                                  ) {
+                                    deleteClientMutation.mutate(
+                                      client.client_id,
+                                    );
+                                  }
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
 
         {/* Pagination footer */}
         <div className="flex items-center justify-between mt-6 text-sm text-gray-500">
           <span>
-            Showing 1 to {filteredClients.length} of {filteredClients.length}{" "}
-            entries
+            Showing{" "}
+            {(currentPage - 1) * itemsPerPage +
+              (paginatedClients.length > 0 ? 1 : 0)}{" "}
+            to {(currentPage - 1) * itemsPerPage + paginatedClients.length} of{" "}
+            {filteredClients.length} entries
           </span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8 bg-white border-gray-200 text-gray-400"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="h-8 w-8 bg-white border-gray-200 text-gray-400 disabled:opacity-50"
             >
               &lt;
             </Button>
+            <span className="px-3 text-gray-700 font-medium">
+              Page {currentPage} of {totalPages}
+            </span>
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8 bg-[#4a5a4a] text-white hover:bg-[#3a4a3f]"
-            >
-              1
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8 bg-white border-gray-200 text-gray-400"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="h-8 w-8 bg-white border-gray-200 text-gray-400 disabled:opacity-50"
             >
               &gt;
             </Button>
@@ -523,6 +575,7 @@ function ClientPage() {
         selectedBarangay={selectedBarangay}
         setSelectedBarangay={setSelectedBarangay}
         isPending={addClientMutation.isPending}
+        employees={employees}
       />
 
       <EditClientSheet

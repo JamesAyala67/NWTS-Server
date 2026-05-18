@@ -6,6 +6,7 @@ import ClientPage from "./pages/clients/ClientPage";
 import ClientDashboard from "./pages/clients/ClientDashboard";
 import PlotsPage from "./pages/plots/PlotsPage";
 import PlotsMap from "./pages/plots/PlotsMap";
+import AuditLogs from "./pages/audit/auditPage";
 
 export default function App() {
   return (
@@ -55,6 +56,15 @@ export default function App() {
         element={
           <ProtectedRoute>
             <PlotsMap />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/audit-logs"
+        element={
+          <ProtectedRoute>
+            <AuditLogs />
           </ProtectedRoute>
         }
       />

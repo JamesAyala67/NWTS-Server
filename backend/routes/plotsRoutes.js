@@ -187,7 +187,7 @@ router.put("/:plot_id/status", async (req, res) => {
 });
 
 // Update plot details (excluding block and lot to preserve location integrity)
-router.put("/:plot_id/edit", async (req, res) => {
+router.put("/maps/:plot_id/edit", async (req, res) => {
   try {
     const { plot_id } = req.params;
     // Removed block and lot from req.body

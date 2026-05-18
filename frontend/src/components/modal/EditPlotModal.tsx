@@ -54,7 +54,7 @@ export default function EditPlotModal({
     }) => {
       // Make a PUT request to update the plot details in the backend
       return axios.put(
-        `http://localhost:3000/api/plots/${plot.plot_id}`,
+        `http://localhost:3000/api/plots/maps/${plot.plot_id}/edit`,
         payload,
       );
     },

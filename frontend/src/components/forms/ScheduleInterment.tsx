@@ -53,6 +53,11 @@ export default function ScheduleInterment({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (new Date(formData.date_of_death) < new Date(formData.date_of_birth)) {
+      return alert("Date of Death cannot be before Date of Birth.");
+    }
+
     intermentMutation.mutate(formData);
   };
 

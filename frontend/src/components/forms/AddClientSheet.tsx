@@ -31,6 +31,7 @@ interface AddClientSheetProps {
   selectedBarangay: string;
   setSelectedBarangay: (val: string) => void;
   isPending: boolean;
+  employees: any[];
 }
 
 // Component for adding a new client, used in ClientDashboard
@@ -47,7 +48,9 @@ export default function AddClientSheet({
   barangays,
   setSelectedProvince,
   setSelectedCity,
+  setSelectedBarangay,
   isPending,
+  employees,
 }: AddClientSheetProps) {
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
@@ -236,9 +239,10 @@ export default function AddClientSheet({
                   className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a]"
                   value={formData.barangay}
                   disabled={!formData.city}
-                  onChange={(e) =>
-                    setFormData({ ...formData, barangay: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setSelectedBarangay(e.target.value);
+                    setFormData({ ...formData, barangay: e.target.value });
+                  }}
                   required
                 >
                   <option value="">Select Barangay</option>
@@ -250,6 +254,29 @@ export default function AddClientSheet({
                 </select>
               </div>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2 mt-4">
+            <label className="text-sm font-medium text-gray-700">
+              Prepared By (Assisting Staff)
+            </label>
+            <select
+              className="flex h-10 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4a5a4a]"
+              value={formData.prepared_by}
+              onChange={(e) =>
+                setFormData({ ...formData, prepared_by: e.target.value })
+              }
+              required
+            >
+              <option value="" disabled>
+                Select an employee...
+              </option>
+              {employees.map((emp) => (
+                <option key={emp.employee_id} value={emp.employee_id}>
+                  {emp.first_name} {emp.last_name} ({emp.employee_id})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex items-center gap-3 pt-6">

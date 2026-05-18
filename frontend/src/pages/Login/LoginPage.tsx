@@ -28,6 +28,7 @@ export default function Login() {
       // This token will be used for authenticating future API requests to protected routes
       localStorage.setItem("token", response.data.token);
       // Saves the usersname and roles to the local storage so that we can use it
+      localStorage.setItem("employee_id", response.data.user.employee_id);
       localStorage.setItem("userName", response.data.user.name);
       localStorage.setItem("userRole", response.data.user.role);
       // Redirect to the Landing Page after Successful login

@@ -115,10 +115,11 @@ export default function PlotsPage() {
               })
             }
           >
-            <option value="Bone Crypt">Bone Crypt</option>
-            <option value="Lawn Lot">Lawn Lot</option>
+            <option value="Lawn Type">Lawn Type</option>
+            <option value="Kennedy Type">Kennedy Type</option>
+            <option value="Family Type">Family Type</option>
             <option value="Mausoleum">Mausoleum</option>
-            <option value="Family Estate">Family Estate</option>
+            <option value="Mini Mausoleum">Mini Mausoleum</option>
           </select>
 
           <input

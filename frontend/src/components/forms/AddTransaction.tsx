@@ -28,8 +28,10 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
   const [availablePlots, setAvailablePlots] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
 
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+
   const [formData, setFormData] = useState({
-    transaction_id: `TXN-${Date.now()}`,
+    transaction_id: `TXN-${Date.now()}-${randomSuffix}`,
     client_id: clientId,
     plot_id: "",
     plot_type: "",
@@ -291,7 +293,7 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
         <div className="text-right">
           <p className="text-xs uppercase tracking-wider text-[#7a6a4f] font-bold mb-1">
             Est. Monthly{" "}
-            <span className="lowercase normal-case font-medium">
+            <span className="normal-case font-medium">
               ({formData.years_to_pay * 12} mos)
             </span>
           </p>

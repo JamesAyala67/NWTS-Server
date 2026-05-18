@@ -1,52 +1,28 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import {
-  Plus,
-  X,
-  ArrowLeft,
-  User,
-  FileText,
-  Trash2,
-  Paperclip,
-  MoreVertical,
-  ArrowRightLeft,
-  Wrench,
-  Activity,
-  CreditCard,
-  Search,
-} from "lucide-react";
-
-// UI Components
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { ArrowLeft, User, FileText, Trash2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-// Form Components
-import AddTransaction from "../../components/forms/AddTransaction";
-import AddCoPurchaser from "../../components/forms/AddCoPurchaser";
-import AddContactPerson from "../../components/forms/AddContactPerson";
-import AddPayment from "../../components/forms/AddPayment";
-import ScheduleInterment from "../../components/forms/ScheduleInterment";
-import AddClientFile from "../../components/forms/AddClientFiles";
 
 // Modal Components
 import TransferModal from "../../components/modal/TransferModal";
 import MaintenanceModal from "../../components/modal/MaintenanceModal";
 
+// Custom UI
+import TransactionHistoryTable from "@/components/custom/client/TransactionHistoryTable";
+import ClientDashboardDrawer from "@/components/custom/client/ClientDashboardDrawer";
+import {
+  StatMiniCard,
+  InfoCard,
+  DataRow,
+} from "../../components/custom/client/ClientDashboardHelper";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
 export default function ClientDashboard() {
   const { id } = useParams();
   const queryClient = useQueryClient();
-
-  // Custom UI
 
   // Modal and Drawer
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
@@ -63,7 +39,7 @@ export default function ClientDashboard() {
     | null
   >(null);
 
-  // Databse UI
+  // Database UI
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
@@ -78,8 +54,8 @@ export default function ClientDashboard() {
     }) => {
       const endpoint =
         type === "co-purchaser"
-          ? `http://localhost:3000/api/contacts/co-purchasers/${recordId}`
-          : `http://localhost:3000/api/contacts/contact-persons/${recordId}`;
+          ? `${API_URL}/api/contacts/co-purchasers/${recordId}`
+          : `${API_URL}/api/contacts/contact-persons/${recordId}`;
       return axios.delete(endpoint);
     },
     onSuccess: () => {
@@ -92,7 +68,7 @@ export default function ClientDashboard() {
   // Delete Mutation for Client Files
   const deleteFileMutation = useMutation({
     mutationFn: async (fileId: string) => {
-      return axios.delete(`http://localhost:3000/api/clients/files/${fileId}`);
+      return axios.delete(`${API_URL}/api/clients/files/${fileId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
@@ -108,12 +84,62 @@ export default function ClientDashboard() {
   } = useQuery({
     queryKey: ["client", id],
     queryFn: async () => {
-      const response = await axios.get(
-        `http://localhost:3000/api/clients/${id}`,
-      );
+      const response = await axios.get(`${API_URL}/api/clients/${id}`);
       return response.data;
     },
   });
+
+  const handleTransactionAction = (
+    action: "payment" | "interment" | "maintenance" | "transfer",
+    txn: any,
+  ) => {
+    setSelectedTransactionForAction(txn);
+    if (action === "payment" || action === "interment") {
+      setActiveDrawer(action);
+    } else if (action === "maintenance") {
+      setIsMaintenanceModalOpen(true);
+    } else if (action === "transfer") {
+      setIsTransferModalOpen(true);
+    }
+  };
+
+  const closeDrawerAndRefresh = () => {
+    setActiveDrawer(null);
+    queryClient.invalidateQueries({ queryKey: ["client", id] });
+  };
+
+  // Calculate available transactions for drawers
+  const { availableCoPurchaserTxns, availableContactTxns } = useMemo(() => {
+    if (!client)
+      return { availableCoPurchaserTxns: [], availableContactTxns: [] };
+
+    const assignedCpIds =
+      client.co_purchasers
+        ?.filter((cp: any) => cp.is_deleted !== 1)
+        .map((cp: any) => cp.transaction_id) || [];
+    const assignedContactIds =
+      client.contact_persons
+        ?.filter((c: any) => c.is_deleted !== 1)
+        .map((c: any) => c.transaction_id) || [];
+
+    const unassignedCpTxns =
+      client.transactions?.filter(
+        (txn: any) =>
+          !assignedCpIds.includes(txn.transaction_id) &&
+          txn.status === "Completed",
+      ) || [];
+    const unassignedContactTxns =
+      client.transactions?.filter(
+        (txn: any) =>
+          !assignedContactIds.includes(txn.transaction_id) &&
+          txn.status === "Completed",
+      ) || [];
+
+    return {
+      availableCoPurchaserTxns: unassignedCpTxns,
+      availableContactTxns: unassignedContactTxns,
+    };
+  }, [client]);
 
   // Filtering Transaction base on Search and Status
   const filteredTransactions = useMemo(() => {
@@ -159,18 +185,6 @@ export default function ClientDashboard() {
           c.transaction_id === txn.transaction_id && c.is_deleted !== 1,
       ),
   );
-
-  // Fetch only available transactions that dont have assigned CoPuurchaser
-  const assignedCoPurchaserTxnIds =
-    client.co_purchasers
-      ?.filter((cp: any) => cp.is_deleted !== 1)
-      .map((cp: any) => cp.transaction_id) || [];
-
-  // Fetch only available transactions that dont have assigned Contact Person
-  const assignedContactTxnIds =
-    client.contact_persons
-      ?.filter((c: any) => c.is_deleted !== 1)
-      .map((c: any) => c.transaction_id) || [];
 
   // Calculate total paid across all plots
   const totalPaid =
@@ -359,7 +373,7 @@ export default function ClientDashboard() {
                 .filter((f: any) => f.is_deleted !== 1)
                 .map((file: any) => {
                   const safePath = file.file_path.replace(/\\/g, "/");
-                  const fileUrl = `http://localhost:3000/${safePath}`;
+                  const fileUrl = `${API_URL}/${safePath}`;
 
                   return (
                     <div
@@ -385,7 +399,7 @@ export default function ClientDashboard() {
                         </div>
                       </a>
                       <Trash2
-                        onClick={(e) => {
+                        onClick={(e: React.MouseEvent<SVGSVGElement>) => {
                           e.stopPropagation();
                           handleDeleteFile(file.file_id);
                         }}
@@ -399,277 +413,26 @@ export default function ClientDashboard() {
         </InfoCard>
       </div>
 
-      {/* Transactions History Table */}
-      <Card className="border-none shadow-sm rounded-xl overflow-hidden bg-white">
-        <CardHeader className="border-b border-gray-100 px-8 py-6">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-[#4a5a4a]" />
-            <CardTitle className="text-lg font-bold text-gray-800 uppercase tracking-wide">
-              Transaction History
-            </CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="px-8 py-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-            <Button
-              onClick={() => setActiveDrawer("transaction")}
-              className="bg-[#4a5a4a] hover:bg-[#3a4a3f] text-white shrink-0"
-            >
-              <Plus className="mr-2 h-4 w-4" /> New Transaction
-            </Button>
+      <TransactionHistoryTable
+        transactions={filteredTransactions}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        onNewTransaction={() => setActiveDrawer("transaction")}
+        onAction={handleTransactionAction}
+      />
 
-            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search ID or Plot..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 h-9 w-full sm:w-[200px] text-sm"
-                />
-              </div>
-              <select
-                className="h-9 px-3 py-1.5 text-sm border rounded-md border-gray-200 bg-white"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="All">All Status</option>
-                <option value="Completed">Completed</option>
-                <option value="Pending">Pending</option>
-                <option value="Transferred">Transferred</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-gray-100 overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-[#4a5a4a] text-white text-[10px] uppercase tracking-widest">
-                <tr>
-                  <th className="p-4 font-semibold">ID</th>
-                  <th className="p-4 font-semibold">Date</th>
-                  <th className="p-4 font-semibold">Plot</th>
-                  <th className="p-4 font-semibold">Price</th>
-                  <th className="p-4 font-semibold">Balance</th>
-                  <th className="p-4 font-semibold">Status</th>
-                  <th className="p-4 font-semibold text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm">
-                {filteredTransactions.map((txn: any) => (
-                  <tr
-                    key={txn.transaction_id}
-                    className="border-b last:border-none hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="p-4 font-bold">{txn.transaction_id}</td>
-                    <td className="p-4">{new Date().toLocaleDateString()}</td>
-                    <td className="p-4">
-                      {txn.plot_id} - {txn.plot_type}
-                    </td>
-                    <td className="p-4">
-                      ₱{Number(txn.plot_price).toLocaleString()}
-                    </td>
-                    <td className="p-4">
-                      ₱{Number(txn.remaining_balance).toLocaleString()}
-                    </td>
-                    <td className="p-4">
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full font-medium ${
-                          txn.status === "Completed"
-                            ? "bg-green-100 text-green-700"
-                            : txn.status === "Pending"
-                              ? "bg-yellow-100 text-yellow-700"
-                              : txn.status === "Transferred"
-                                ? "bg-gray-100 text-gray-700"
-                                : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
-                        {txn.status}
-                      </span>
-                    </td>
-                    <td className="p-4 text-center">
-                      {txn.status !== "Transferred" && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreVertical className="h-5 w-5" />
-                            </Button>
-                          </DropdownMenuTrigger>
-
-                          <DropdownMenuContent
-                            align="end"
-                            className="bg-white border border-gray-200 shadow-xl rounded-md min-w-[160px] p-1"
-                          >
-                            {txn.remaining_balance > 0 && (
-                              <DropdownMenuItem
-                                className="cursor-pointer flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                onSelect={() => {
-                                  setTimeout(() => {
-                                    setSelectedTransactionForAction(txn);
-                                    setActiveDrawer("payment");
-                                  }, 150);
-                                }}
-                              >
-                                <CreditCard className="mr-2 h-4 w-4 text-green-600" />
-                                Add Payment
-                              </DropdownMenuItem>
-                            )}
-
-                            {txn.status === "Completed" && (
-                              <DropdownMenuItem
-                                className="cursor-pointer flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                onSelect={() => {
-                                  setTimeout(() => {
-                                    setSelectedTransactionForAction(txn);
-                                    setActiveDrawer("interment");
-                                  }, 150);
-                                }}
-                              >
-                                <Activity className="mr-2 h-4 w-4 text-indigo-600" />
-                                Schedule Interment
-                              </DropdownMenuItem>
-                            )}
-
-                            <DropdownMenuItem
-                              className="cursor-pointer flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                              onSelect={() => {
-                                setTimeout(() => {
-                                  setSelectedTransactionForAction(txn);
-                                  setIsMaintenanceModalOpen(true);
-                                }, 150);
-                              }}
-                            >
-                              <Wrench className="mr-2 h-4 w-4 text-orange-600" />
-                              Maintenance
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem
-                              className="cursor-pointer flex items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 focus:bg-red-50 font-medium"
-                              onSelect={() => {
-                                setTimeout(() => {
-                                  setSelectedTransactionForAction(txn);
-                                  setIsTransferModalOpen(true);
-                                }, 150);
-                              }}
-                            >
-                              <ArrowRightLeft className="mr-2 h-4 w-4" />
-                              Transfer Plot
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredTransactions.length === 0 && (
-              <div className="text-center p-8 text-gray-400 italic text-sm">
-                No transactions match your search/filter criteria.
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Drawer */}
-      {activeDrawer && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
-            onClick={() => setActiveDrawer(null)}
-          />
-          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-[#faf8f5] shadow-2xl overflow-y-auto border-l border-gray-200">
-            <div className="flex justify-between items-center p-6 border-b bg-white sticky top-0 z-10">
-              <h2 className="text-xl font-bold text-[#1e293b]">
-                {activeDrawer === "transaction" && "Record New Transaction"}
-                {activeDrawer === "copurchaser" && "Add Co-Purchaser"}
-                {activeDrawer === "contact" && "Add Contact Person"}
-                {activeDrawer === "file" && "Register Document"}
-                {activeDrawer === "payment" && "Record Payment"}
-                {activeDrawer === "interment" && "Schedule Interment"}
-              </h2>
-              <button
-                onClick={() => setActiveDrawer(null)}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-red-500"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
-            <div className="p-8">
-              {activeDrawer === "transaction" && (
-                <AddTransaction clientId={id!} />
-              )}
-
-              {activeDrawer === "copurchaser" && (
-                <AddCoPurchaser
-                  clientId={id!}
-                  transactions={
-                    client.transactions?.filter(
-                      (txn: any) =>
-                        !assignedCoPurchaserTxnIds.includes(
-                          txn.transaction_id,
-                        ) && txn.status === "Completed",
-                    ) || []
-                  }
-                />
-              )}
-
-              {activeDrawer === "contact" && (
-                <AddContactPerson
-                  clientId={id!}
-                  transactions={
-                    client.transactions?.filter(
-                      (txn: any) =>
-                        !assignedContactTxnIds.includes(txn.transaction_id) &&
-                        txn.status === "Completed",
-                    ) || []
-                  }
-                />
-              )}
-              {activeDrawer === "file" && (
-                <AddClientFile
-                  clientId={id!}
-                  transactions={client.transactions || []}
-                />
-              )}
-
-              {activeDrawer === "payment" && selectedTransactionForAction && (
-                <div>
-                  <h3 className="text-lg font-bold mb-4">Record New Payment</h3>
-                  <AddPayment
-                    transactionId={selectedTransactionForAction.transaction_id}
-                    currentBalance={
-                      selectedTransactionForAction.remaining_balance
-                    }
-                    onSuccess={() => {
-                      setActiveDrawer(null);
-                      queryClient.invalidateQueries({
-                        queryKey: ["client", id],
-                      });
-                    }}
-                  />
-                </div>
-              )}
-
-              {activeDrawer === "interment" && selectedTransactionForAction && (
-                <div>
-                  <h3 className="text-lg font-bold mb-4">Schedule Interment</h3>
-                  <ScheduleInterment
-                    plotId={selectedTransactionForAction.plot_id}
-                    transactionId={selectedTransactionForAction.transaction_id}
-                    onSuccess={() => {
-                      setActiveDrawer(null);
-                      queryClient.invalidateQueries({
-                        queryKey: ["client", id],
-                      });
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+      <ClientDashboardDrawer
+        activeDrawer={activeDrawer}
+        onClose={() => setActiveDrawer(null)}
+        clientId={id!}
+        clientData={client}
+        availableCoPurchaserTxns={availableCoPurchaserTxns}
+        availableContactTxns={availableContactTxns}
+        selectedTransaction={selectedTransactionForAction}
+        onSuccess={closeDrawerAndRefresh}
+      />
 
       <TransferModal
         isOpen={isTransferModalOpen}
@@ -695,74 +458,6 @@ export default function ClientDashboard() {
           queryClient.invalidateQueries({ queryKey: ["client", id] });
         }}
       />
-    </div>
-  );
-}
-
-// Helper component lalaag ko pa ni dumn sa components/custom
-function StatMiniCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-  isCurrency?: boolean;
-}) {
-  return (
-    <div className="bg-white px-4 py-2 rounded-lg border border-gray-100 shadow-sm flex flex-col min-w-[120px]">
-      <span className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">
-        {label}
-      </span>
-      <span className="text-sm font-bold text-[#1e293b]">{value}</span>
-    </div>
-  );
-}
-
-function InfoCard({
-  title,
-  icon,
-  children,
-  onAdd,
-}: {
-  title: string;
-  icon: any;
-  children: React.ReactNode;
-  onAdd?: () => void;
-}) {
-  return (
-    <Card className="border-none shadow-sm bg-white overflow-hidden flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-black pt-1 pb-2 px-4 shrink-0">
-        <div className="flex items-center gap-2">
-          {icon}
-          <CardTitle className="text-xs font-bold text-gray-600 uppercase tracking-tight">
-            {title}
-          </CardTitle>
-        </div>
-        {onAdd && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onAdd}
-            className="h-6 w-6 p-0 rounded-full hover:bg-gray-100 text-[#4a5a4a]"
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent className="pb-4 px-4 flex-1">{children}</CardContent>
-    </Card>
-  );
-}
-
-function DataRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
-        {label}
-      </span>
-      <span className="text-gray-700 font-medium break-words leading-tight">
-        {value}
-      </span>
     </div>
   );
 }

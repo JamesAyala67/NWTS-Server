@@ -48,7 +48,7 @@ router.post("/", async (req, res) => {
     // Update the plot status to ""Sold" after successful transaction recording
     // PS: Dae ko aram kung anong tama lalaag ko digdi
     await connection.query(
-      "UPDATE plots SET status = 'Sold' WHERE plot_id = ?",
+      "UPDATE plots SET status = 'Reserved' WHERE plot_id = ?",
       [plot_id],
     );
 
@@ -161,6 +161,8 @@ router.post("/transfer", async (req, res) => {
 
 // log a maintenance for a specific transaction (Kaiba kani and Audit_Logs)
 router.post("/maintenance", async (req, res) => {
+  const connection = await db.getConnection(); // Get connection for transaction
+
   try {
     const {
       plot_id,
@@ -169,34 +171,53 @@ router.post("/maintenance", async (req, res) => {
       cost,
       payment_status,
       scheduled_date,
-      logged_by,
+      prepared_by,
     } = req.body;
 
-    // Generate a unique ID for the maintenance log
-    // PS: Dae ko aram kung anong tama lalaag ko digdi, pero pwede ni siya i-improve pag may time
-    const maintenance_id = `MNT-${Date.now()}`;
+    // Start SQL Transaction
+    await connection.beginTransaction();
 
-    const query = `
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const maintenance_id = `MNT-${Date.now()}-${randomSuffix}`;
+
+    const insertLogQuery = `
       INSERT INTO maintenance_logs 
-      (maintenance_id, plot_id, transaction_id, description, cost, payment_status, scheduled_date, logged_by) 
+      (maintenance_id, plot_id, transaction_id, description, cost, payment_status, scheduled_date, prepared_by) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    await db.query(query, [
+    // 1. Insert the maintenance log
+    await connection.query(insertLogQuery, [
       maintenance_id,
       plot_id,
       transaction_id,
       description,
-      cost || 0, // Fallback to 0 if cost is empty
-      payment_status || "Pending", // dae ko aram kung ano lalaag ko din digdi either unpad or pending
+      cost || 0,
+      payment_status || "Pending",
       scheduled_date,
-      logged_by || "Admin",
+      prepared_by || "Admin",
     ]);
 
-    res.status(201).json({ message: "Maintenance scheduled successfully!" });
+    // 2. Update the Plot Status to "Maintenance"
+    await connection.query(
+      "UPDATE plots SET status = 'Maintenance' WHERE plot_id = ?",
+      [plot_id],
+    );
+
+    // Commit both changes
+    await connection.commit();
+
+    res.status(201).json({
+      message: "Maintenance scheduled and plot updated to Maintenance!",
+    });
   } catch (error) {
+    // If either query fails, undo everything
+    await connection.rollback();
     console.error("Error logging maintenance:", error);
     res.status(500).json({ error: "Failed to schedule maintenance." });
+  } finally {
+    // Release the connection back to the pool
+    connection.release();
   }
 });
 

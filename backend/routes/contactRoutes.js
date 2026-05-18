@@ -39,7 +39,8 @@ router.post("/:id/co-purchasers", async (req, res) => {
     }
 
     // Genereate ID PS: babaguhon pa ni dae ko pa aram kung ano trip nindo
-    const co_purchaser_id = `CP-${Date.now()}`;
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const co_purchaser_id = `CP-${Date.now()}-${randomSuffix}`;
     const sql = `
       INSERT INTO co_purchaser 
       (co_purchaser_id, client_id, transaction_id, first_name, last_name, middle_name, contact_number, is_deleted) 
@@ -101,7 +102,8 @@ router.post("/:id/contact-persons", async (req, res) => {
     }
 
     // Genereate ID PS: babaguhon pa ni dae ko pa aram kung ano trip nindo
-    const contact_id = `CON-${Date.now()}`;
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const contact_id = `CON-${Date.now()}-${randomSuffix}`;
     const sql = `
       INSERT INTO contact_person 
       (contact_id, client_id, transaction_id, first_name, last_name, middle_name, relation, contact_number, is_deleted) 
