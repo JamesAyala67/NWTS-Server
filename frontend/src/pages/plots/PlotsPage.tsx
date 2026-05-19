@@ -9,10 +9,14 @@ export default function PlotsPage() {
   // Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+  //
+  const employeeId = localStorage.getItem("employee_id");
+
   // Bulk Update State
   const [bulkData, setBulkData] = useState({
     plot_type: "Lawn Lot",
     new_price: 0,
+    employee_id: employeeId,
   });
 
   //

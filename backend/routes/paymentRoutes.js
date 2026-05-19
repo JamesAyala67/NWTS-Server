@@ -15,10 +15,15 @@ router.post("/", async (req, res) => {
       payment_method,
       reference_number,
       recorded_by,
+      employee_id, // Safely extract the system user's ID
     } = req.body;
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const payment_id = `PAY-${Date.now()}-${randomSuffix}`;
+
     await connection.beginTransaction();
 
     // Insert a new payment record
@@ -34,7 +39,7 @@ router.post("/", async (req, res) => {
       ],
     );
 
-    // Update the transactions remaining balance
+    // Update the transaction's remaining balance
     await connection.query(
       "UPDATE transactions SET remaining_balance = remaining_balance - ? WHERE transaction_id = ?",
       [amount_paid, transaction_id],
@@ -45,6 +50,8 @@ router.post("/", async (req, res) => {
       "SELECT remaining_balance, plot_id FROM transactions WHERE transaction_id = ?",
       [transaction_id],
     );
+
+    let completionNote = "";
 
     // If fully paid update Transaction status AND Plot status
     if (updatedTxn[0].remaining_balance <= 0) {
@@ -59,12 +66,17 @@ router.post("/", async (req, res) => {
         "UPDATE plots SET status = 'Occupied' WHERE plot_id = ?",
         [updatedTxn[0].plot_id],
       );
+
+      completionNote =
+        " Transaction is now fully paid. Plot status updated to Occupied.";
     }
 
+    // Execute Audit Log safely within the SQL transaction
     await logAudit(
-      recorded_by,
+      activeEmployee,
       "ADD PAYMENT",
-      `Recorded a payment of ₱${amount_paid} for Transaction ${transaction_id} via ${payment_method}.`,
+      `Recorded a payment of ₱${Number(amount_paid).toLocaleString()} for Transaction ${transaction_id} via ${payment_method}.${completionNote}`,
+      transaction_id,
       connection,
     );
 

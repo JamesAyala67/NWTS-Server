@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
+const logAudit = require("../utils/auditLogger");
 
 // Add Co-Purchaser
 router.post("/:id/co-purchasers", async (req, res) => {
@@ -12,19 +13,26 @@ router.post("/:id/co-purchasers", async (req, res) => {
       last_name,
       middle_name,
       contact_number,
+      prepared_by, // Staff name string from frontend dropdown
+      employee_id, // Background user account identifier
     } = req.body;
 
-    // Ensure that Transaction is Completed before allowing co-purchaser assignment
+    // Verify transaction exists
     const [txnCheck] = await db.query(
-      "SELECT status FROM transactions WHERE transaction_id = ?",
+      "SELECT status, plot_id FROM transactions WHERE transaction_id = ?",
       [transaction_id],
     );
 
-    if (txnCheck.length === 0 || txnCheck[0].status !== "Completed") {
-      return res.status(400).json({
-        error: "Co-purchasers can only be added to Completed transactions.",
-      });
+    if (txnCheck.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "Associated transaction not found." });
     }
+
+    // NOTE: If you want to restrict to completed transactions only, uncomment below:
+    // if (txnCheck[0].status !== "Completed") {
+    //   return res.status(400).json({ error: "Co-purchasers can only be added to finalized transactions." });
+    // }
 
     // Ensures only one active co-purchaser is allowed per transaction
     const [existing] = await db.query(
@@ -38,14 +46,16 @@ router.post("/:id/co-purchasers", async (req, res) => {
       });
     }
 
-    // Genereate ID PS: babaguhon pa ni dae ko pa aram kung ano trip nindo
+    // Generate unique primary key
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const co_purchaser_id = `CP-${Date.now()}-${randomSuffix}`;
+
     const sql = `
       INSERT INTO co_purchaser 
-      (co_purchaser_id, client_id, transaction_id, first_name, last_name, middle_name, contact_number, is_deleted) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+      (co_purchaser_id, client_id, transaction_id, first_name, last_name, middle_name, contact_number, prepared_by, is_deleted) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
     `;
+
     await db.query(sql, [
       co_purchaser_id,
       clientId,
@@ -54,7 +64,19 @@ router.post("/:id/co-purchasers", async (req, res) => {
       last_name,
       middle_name || "",
       contact_number,
+      prepared_by,
     ]);
+
+    // Format safe audit logger context target
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
+
+    await logAudit(
+      activeEmployee,
+      "ADD CO-PURCHASER",
+      `Linked co-purchaser ${first_name} ${last_name} to Plot ${txnCheck[0].plot_id} (Txn: ${transaction_id.substring(0, 8)}). Processed by ${prepared_by}.`,
+      transaction_id, // Links directly into this transaction's history group
+    );
 
     res.status(201).json({ message: "Co-purchaser added successfully" });
   } catch (error) {
@@ -74,18 +96,20 @@ router.post("/:id/contact-persons", async (req, res) => {
       middle_name,
       relation,
       contact_number,
+      prepared_by, // Staff name string from frontend dropdown
+      employee_id, // Background user account identifier
     } = req.body;
 
-    // Ensure that Transaction is Completed before allowing contact person assignment
+    // Verify transaction exists
     const [txnCheck] = await db.query(
-      "SELECT status FROM transactions WHERE transaction_id = ?",
+      "SELECT status, plot_id FROM transactions WHERE transaction_id = ?",
       [transaction_id],
     );
 
-    if (txnCheck.length === 0 || txnCheck[0].status !== "Completed") {
-      return res.status(400).json({
-        error: "Contact persons can only be added to Completed transactions.",
-      });
+    if (txnCheck.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "Associated transaction not found." });
     }
 
     // Ensures only one active contact person is allowed per transaction
@@ -101,14 +125,15 @@ router.post("/:id/contact-persons", async (req, res) => {
       });
     }
 
-    // Genereate ID PS: babaguhon pa ni dae ko pa aram kung ano trip nindo
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const contact_id = `CON-${Date.now()}-${randomSuffix}`;
+
     const sql = `
       INSERT INTO contact_person 
-      (contact_id, client_id, transaction_id, first_name, last_name, middle_name, relation, contact_number, is_deleted) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+      (contact_id, client_id, transaction_id, first_name, last_name, middle_name, relation, contact_number, prepared_by, is_deleted) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `;
+
     await db.query(sql, [
       contact_id,
       clientId,
@@ -118,7 +143,18 @@ router.post("/:id/contact-persons", async (req, res) => {
       middle_name || "",
       relation,
       contact_number,
+      prepared_by,
     ]);
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
+
+    await logAudit(
+      activeEmployee,
+      "ADD CONTACT PERSON",
+      `Added contact person ${first_name} ${last_name} (${relation}) to Plot ${txnCheck[0].plot_id}. Processed by ${prepared_by}.`,
+      transaction_id,
+    );
 
     res.status(201).json({ message: "Contact person added successfully" });
   } catch (error) {
@@ -128,29 +164,57 @@ router.post("/:id/contact-persons", async (req, res) => {
 });
 
 // Soft Delete Co-Purchaser
-router.delete("/co-purchasers/:id", async (req, res) => {
+router.patch("/co-purchasers/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const { deleted_by, employee_id } = req.body;
+
     await db.query(
-      "UPDATE co_purchaser SET is_deleted = 1 WHERE co_purchaser_id = ?",
+      "UPDATE co_purchaser SET is_deleted = 1  WHERE co_purchaser_id = ?",
       [id],
     );
-    res.json({ message: "Co-purchaser removed (soft delete)" });
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
+
+    await logAudit(
+      activeEmployee,
+      "REMOVE CO-PURCHASER",
+      `Soft deleted co-purchaser record ID: ${id}. Action executed by ${deleted_by}, (${activeEmployee || "System"}).`,
+      null,
+    );
+
+    res.json({ message: "Co-purchaser removed successfully." });
   } catch (error) {
+    console.error("Error removing co-purchaser:", error);
     res.status(500).json({ error: "Failed to remove co-purchaser" });
   }
 });
 
 // Soft Delete Contact Person
-router.delete("/contact-persons/:id", async (req, res) => {
+router.patch("/contact-persons/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const { deleted_by, employee_id } = req.body;
+
     await db.query(
       "UPDATE contact_person SET is_deleted = 1 WHERE contact_id = ?",
       [id],
     );
-    res.json({ message: "Contact person removed (soft delete)" });
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
+
+    await logAudit(
+      activeEmployee,
+      "REMOVE CONTACT PERSON",
+      `Soft deleted contact person record ID: ${id}. Action executed by ${deleted_by}, (${employee_id || "System"}).`,
+      null,
+    );
+
+    res.json({ message: "Contact person removed successfully." });
   } catch (error) {
+    console.error("Error removing contact person:", error);
     res.status(500).json({ error: "Failed to remove contact person" });
   }
 });

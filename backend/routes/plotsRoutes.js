@@ -1,6 +1,27 @@
 const express = require("express");
+const crypto = require("crypto"); // Used to generate unique IDs for audit_id
 const router = express.Router();
 const db = require("../config/db");
+
+// Helper function to insert logs directly into your audit_logs table
+async function logAction(
+  employeeId,
+  actionType,
+  description,
+  clientId = null,
+  txnId = null,
+) {
+  try {
+    const auditId = `AUD-${crypto.randomUUID().substring(0, 8).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+    await db.query(
+      `INSERT INTO audit_logs (audit_id, employee_id, client_id, transaction_id, action_type, action_description, date_time) 
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [auditId, employeeId || null, clientId, txnId, actionType, description],
+    );
+  } catch (err) {
+    console.error("Audit Logging Failure:", err);
+  }
+}
 
 // Fetch all plots
 router.get("/", async (req, res) => {
@@ -18,7 +39,6 @@ router.get("/", async (req, res) => {
 // Fetch all plots with interment and transaction details for the map view
 router.get("/maps", async (req, res) => {
   try {
-    // This query fetches all plots and their related interment, transaction, and client info in one go
     const query = `
       SELECT 
         p.*, 
@@ -43,7 +63,6 @@ router.get("/maps", async (req, res) => {
 
     const [rows] = await db.query(query);
 
-    // Group the results by plot_id to consolidate interment and transaction details under each plot
     const groupedPlots = rows.reduce((acc, row) => {
       let plot = acc.find((p) => p.plot_id === row.plot_id);
 
@@ -55,7 +74,6 @@ router.get("/maps", async (req, res) => {
           plot_type: row.plot_type,
           status: row.status,
           price: row.price,
-          // Add Owner Info here
           owner_name: row.first_name
             ? `${row.first_name} ${row.last_name}`
             : "No Owner",
@@ -67,13 +85,11 @@ router.get("/maps", async (req, res) => {
       }
 
       if (row.interment_id) {
-        // Prevent duplicate interment entries in the array
         const exists = plot.interments.some(
           (inter) => inter.interment_id === row.interment_id,
         );
 
         if (!exists) {
-          // Format the full name cleanly in case your frontend still relies on a single string
           const middleInitial = row.deceased_middle
             ? ` ${row.deceased_middle} `
             : " ";
@@ -85,7 +101,7 @@ router.get("/maps", async (req, res) => {
             first_name: row.deceased_first,
             middle_name: row.deceased_middle,
             last_name: row.deceased_last,
-            deceased_name: formattedFullName, // Included for backward compatibility with your frontend
+            deceased_name: formattedFullName,
             date_of_birth: row.date_of_birth,
             date_of_death: row.date_of_death,
             date_of_interment: row.date_of_interment,
@@ -103,12 +119,11 @@ router.get("/maps", async (req, res) => {
   }
 });
 
-// Responsible for creating a new plot
+// Responsible for creating a new plot (AUDITED)
 router.post("/", async (req, res) => {
   try {
-    const { plot_id, block, lot, plot_type, price } = req.body;
+    const { plot_id, block, lot, plot_type, price, employee_id } = req.body;
 
-    // Safety check to prevent duplicate plot IDs
     const [existingPlot] = await db.query(
       "SELECT * FROM plots WHERE plot_id = ?",
       [plot_id],
@@ -119,11 +134,18 @@ router.post("/", async (req, res) => {
         .json({ error: "A plot with this ID already exists!" });
     }
 
-    // Insert a new plot record
     await db.query(
-      "INSERT INTO plots (plot_id, block, lot, plot_type, price) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO plots (plot_id, block, lot, plot_type, price, status) VALUES (?, ?, ?, ?, ?, 'Available')",
       [plot_id, block, lot, plot_type, price],
     );
+
+    // Write to Audit Trail
+    await logAction(
+      employee_id,
+      "CREATE_PLOT",
+      `Added new plot inventory: ID ${plot_id} (Block ${block}, Lot ${lot}) assigned as '${plot_type}' at base price ₱${Number(price).toLocaleString()}`,
+    );
+
     res.status(201).json({ message: "Plot successfully added to inventory!" });
   } catch (error) {
     console.error("Error adding plot:", error);
@@ -131,20 +153,28 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Bulk update plot prices by type (e.g., update all 'Lawn Type' plots to a new price only if they are currently 'Available')
+// Bulk update plot prices by type (AUDITED)
 router.put("/bulk-price", async (req, res) => {
   try {
-    const { plot_type, new_price } = req.body;
+    const { plot_type, new_price, employee_id } = req.body;
 
-    if (!plot_type || !new_price) {
+    if (!plot_type || new_price === undefined || new_price === null) {
       return res.status(400).json({ error: "Missing plot type or new price." });
     }
 
-    // Only updates 'Available' plots of the chosen type
     const [result] = await db.query(
       "UPDATE plots SET price = ? WHERE plot_type = ? AND status = 'Available'",
       [new_price, plot_type],
     );
+
+    // Write to Audit Trail if changes were actually applied
+    if (result.affectedRows > 0) {
+      await logAction(
+        employee_id,
+        "BULK_PRICE_UPDATE",
+        `Performed a batch price override on all Available '${plot_type}' plots to ₱${Number(new_price).toLocaleString()}. Affected rows count: ${result.affectedRows}`,
+      );
+    }
 
     res.json({
       message: `Successfully updated prices!`,
@@ -156,26 +186,36 @@ router.put("/bulk-price", async (req, res) => {
   }
 });
 
-// Update the status of a specific plot
+// Update the status of a specific plot (AUDITED)
 router.put("/:plot_id/status", async (req, res) => {
   try {
     const { plot_id } = req.params;
-    const { status } = req.body;
+    const { status, employee_id } = req.body;
 
     if (!status) {
       return res.status(400).json({ error: "Missing new status." });
     }
 
-    // dae pa finalize since dae ko pa tapus si nasa frontend
-
-    const [result] = await db.query(
-      "UPDATE plots SET status = ? WHERE plot_id = ?",
-      [status, plot_id],
+    // Fetch original status for more informative descriptive trail
+    const [original] = await db.query(
+      "SELECT status FROM plots WHERE plot_id = ?",
+      [plot_id],
     );
-
-    if (result.affectedRows === 0) {
+    if (original.length === 0) {
       return res.status(404).json({ error: "Plot not found." });
     }
+
+    await db.query("UPDATE plots SET status = ? WHERE plot_id = ?", [
+      status,
+      plot_id,
+    ]);
+
+    // Write to Audit Trail
+    await logAction(
+      employee_id,
+      "UPDATE_PLOT_STATUS",
+      `Changed Plot ${plot_id} status assignment from '${original[0].status}' to '${status}'`,
+    );
 
     res.json({
       message: `Plot ${plot_id} status updated to ${status} successfully.`,
@@ -186,14 +226,12 @@ router.put("/:plot_id/status", async (req, res) => {
   }
 });
 
-// Update plot details (excluding block and lot to preserve location integrity)
+// Update plot details (AUDITED)
 router.put("/maps/:plot_id/edit", async (req, res) => {
   try {
     const { plot_id } = req.params;
-    // Removed block and lot from req.body
-    const { plot_type, price, status } = req.body;
+    const { plot_type, price, status, employee_id } = req.body;
 
-    // Backend Safety: Only allow these specific statuses
     const allowedStatuses = [
       "Available",
       "Occupied",
@@ -204,15 +242,25 @@ router.put("/maps/:plot_id/edit", async (req, res) => {
       return res.status(400).json({ error: "Invalid status provided." });
     }
 
-    // Removed block and lot from the UPDATE query
-    const [result] = await db.query(
+    // Fetch original state before override
+    const [original] = await db.query("SELECT * FROM plots WHERE plot_id = ?", [
+      plot_id,
+    ]);
+    if (original.length === 0) {
+      return res.status(404).json({ error: "Plot not found." });
+    }
+
+    await db.query(
       "UPDATE plots SET plot_type = ?, price = ?, status = ? WHERE plot_id = ?",
       [plot_type, price, status, plot_id],
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: "Plot not found." });
-    }
+    // Write to Audit Trail
+    await logAction(
+      employee_id,
+      "EDIT_PLOT_DETAILS",
+      `Modified attributes on Plot ${plot_id}. Type: '${original[0].plot_type}' ➔ '${plot_type}', Base Price: ₱${Number(original[0].price).toLocaleString()} ➔ ₱${Number(price).toLocaleString()}, Status: '${original[0].status}' ➔ '${status}'`,
+    );
 
     res.json({ message: "Plot details updated successfully!" });
   } catch (error) {

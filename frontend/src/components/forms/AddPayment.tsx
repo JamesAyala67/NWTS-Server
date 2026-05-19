@@ -1,8 +1,9 @@
 // This component allows users to add a payment for a specific transaction
 // it includes form validation to ensure the payment amount does not exceed the remaining balance
 // and provides feedback on successful or failed payment recording
+// It now features a dynamic employee dropdown to select who processed the payment.
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -16,13 +17,27 @@ export default function AddPayment({
   onSuccess: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [employees, setEmployees] = useState<any[]>([]); // Dynamic employee list state
 
   const [formData, setFormData] = useState({
     amount_paid: 0,
     payment_method: "Cash",
     reference_number: "",
-    recorded_by: "Admin",
+    recorded_by: "", // Initialized empty to force user selection
   });
+
+  // Fetch active employees to populate the Recorded By dropdown
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const res = await axios.get("http://localhost:3000/api/employees");
+        setEmployees(res.data);
+      } catch (error) {
+        console.error("Failed to fetch employees", error);
+      }
+    };
+    fetchEmployees();
+  }, []);
 
   // Save payment
   const paymentMutation = useMutation({
@@ -52,11 +67,18 @@ export default function AddPayment({
     if (formData.amount_paid <= 0) {
       return alert("Please enter a valid amount.");
     }
+    if (!formData.recorded_by) {
+      return alert("Please select the employee who recorded this payment.");
+    }
+
+    // Capture the physical encoder's system ID for the database Audit Trail
+    const employeeId = localStorage.getItem("employee_id") || null;
 
     // Trigger the mutation
     paymentMutation.mutate({
       ...formData,
       transaction_id: transactionId,
+      employee_id: employeeId,
     });
   };
 
@@ -75,8 +97,8 @@ export default function AddPayment({
         <input
           type="number"
           max={currentBalance}
-          className="border p-2 rounded"
-          value={formData.amount_paid}
+          className="border p-2 rounded focus:outline-none focus:ring-1 focus:ring-green-600"
+          value={formData.amount_paid || ""}
           onChange={(e) =>
             setFormData({
               ...formData,
@@ -90,7 +112,7 @@ export default function AddPayment({
       <div className="flex flex-col gap-1">
         <label className="text-sm font-semibold">Payment Method</label>
         <select
-          className="border p-2 rounded bg-white"
+          className="border p-2 rounded bg-white focus:outline-none focus:ring-1 focus:ring-green-600"
           value={formData.payment_method}
           onChange={(e) =>
             setFormData({ ...formData, payment_method: e.target.value })
@@ -110,12 +132,37 @@ export default function AddPayment({
         <input
           type="text"
           placeholder="e.g., GCash Ref No."
-          className="border p-2 rounded"
+          className="border p-2 rounded focus:outline-none focus:ring-1 focus:ring-green-600"
           value={formData.reference_number}
           onChange={(e) =>
             setFormData({ ...formData, reference_number: e.target.value })
           }
         />
+      </div>
+
+      {/* Dynamic Dropdown for Employee Selection */}
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-semibold text-gray-700">
+          Recorded By
+        </label>
+        <select
+          className="border p-2 rounded bg-white focus:outline-none focus:ring-1 focus:ring-green-600"
+          value={formData.recorded_by}
+          onChange={(e) =>
+            setFormData({ ...formData, recorded_by: e.target.value })
+          }
+          required
+        >
+          <option value="">-- Select Assisting Employee --</option>
+          {employees.map((emp) => {
+            const fullName = `${emp.first_name} ${emp.last_name}`;
+            return (
+              <option key={emp.employee_id} value={fullName}>
+                {fullName} ({emp.role})
+              </option>
+            );
+          })}
+        </select>
       </div>
 
       <button

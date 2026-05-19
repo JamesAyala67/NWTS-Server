@@ -30,12 +30,9 @@ router.post("/", async (req, res) => {
       city,
       barangay,
       prepared_by,
-      employee_id,
-    } = req.body;
+      employee_id, // System alpha-numeric identifier
+    } = req.body || {};
 
-    const rawEmployee = employee_id;
-
-    // Added prepared_by and explicit created_at timestamp execution
     const query = `
       INSERT INTO clients 
       (client_id, first_name, middle_name, last_name, birthdate, civil_status, contact_number, province, city, barangay, prepared_by, created_at) 
@@ -57,12 +54,12 @@ router.post("/", async (req, res) => {
     ]);
 
     const activeEmployee =
-      rawEmployee && rawEmployee.trim() !== "" ? rawEmployee : "EMP-001";
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
 
     await logAudit(
       activeEmployee,
       "CREATE CLIENT",
-      `Created new client profile for ${last_name}, ${first_name}`,
+      `Created new client profile for ${last_name}, ${first_name}. Assisted by ${prepared_by || "System"}.`,
       client_id,
     );
 
@@ -89,11 +86,8 @@ router.put("/:id", async (req, res) => {
       barangay,
       edited_by,
       employee_id,
-    } = req.body;
+    } = req.body || {};
 
-    const activeEmployee = employee_id || edited_by;
-
-    // Added edited_by update matching tracking specifications
     const query = `
       UPDATE clients 
       SET first_name = ?, middle_name = ?, last_name = ?, contact_number = ?, civil_status = ?, birthdate = ?, province = ?, city = ?, barangay = ?, edited_by = ?, updated_at = NOW() 
@@ -110,14 +104,17 @@ router.put("/:id", async (req, res) => {
       province,
       city,
       barangay,
-      activeEmployee,
+      edited_by,
       clientID,
     ]);
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
 
     await logAudit(
       activeEmployee,
       "EDIT CLIENT",
-      `Updated details for client ${first_name} ${last_name}`,
+      `Updated details for client ${first_name} ${last_name}. Modified by ${edited_by || "System"}.`,
       clientID,
     );
 
@@ -145,16 +142,19 @@ router.get("/", async (req, res) => {
 router.patch("/:id/delete", async (req, res) => {
   try {
     const clientId = req.params.id;
-    const { deleted_by, employee_id } = req.body;
-    const activeEmployee = employee_id || deleted_by;
+    const { deleted_by, employee_id } = req.body || {};
 
-    const query = "UPDATE clients SET is_deleted = TRUE WHERE client_id = ?";
-    await db.query(query, [clientId]);
+    const query =
+      "UPDATE clients SET is_deleted = TRUE, edited_by = ? WHERE client_id = ?";
+    await db.query(query, [deleted_by, clientId]);
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
 
     await logAudit(
       activeEmployee,
       "SOFT-DELETED CLIENT",
-      `Soft deleted client ID: ${clientId}`,
+      `Soft deleted client ID: ${clientId}. Executed by ${deleted_by || "System"}.`,
       clientId,
     );
 
@@ -214,7 +214,8 @@ router.get("/:id", async (req, res) => {
 // Add Client File Record
 router.post("/:id/files", upload.single("file"), async (req, res) => {
   try {
-    const { transaction_id, file_name } = req.body;
+    const { transaction_id, file_name, prepared_by, uploaded_by, employee_id } =
+      req.body || {};
     const clientId = req.params.id;
 
     if (!req.file) {
@@ -234,6 +235,18 @@ router.post("/:id/files", upload.single("file"), async (req, res) => {
       file_name,
       filePath,
     ]);
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
+    const fileUploader = uploaded_by || prepared_by || "System";
+
+    await logAudit(
+      activeEmployee,
+      "UPLOAD FILE",
+      `Uploaded document '${file_name}' to Client Profile. Attached by ${fileUploader}.`,
+      clientId,
+    );
+
     res.status(201).json({ message: "File uploaded successfully" });
   } catch (error) {
     console.error("Error uploading file: ", error);
@@ -242,11 +255,35 @@ router.post("/:id/files", upload.single("file"), async (req, res) => {
 });
 
 // Soft Delete Client File Record
-router.delete("/files/:fileId", async (req, res) => {
+router.patch("/files/:fileId", async (req, res) => {
   try {
     const fileId = req.params.fileId;
+    const { deleted_by, employee_id } = req.body || {};
+
+    // Fetch client_id associated with this file*/*
+    const [fileRecords] = await db.query(
+      "SELECT client_id FROM client_files WHERE file_id = ?",
+      [fileId],
+    );
+
+    if (fileRecords.length === 0) {
+      return res.status(404).json({ error: "File not found in database" });
+    }
+
+    const client_id = fileRecords[0].client_id;
+
     const query = "UPDATE client_files SET is_deleted = 1 WHERE file_id = ?";
     await db.query(query, [fileId]);
+
+    const activeEmployee =
+      employee_id && employee_id.trim() !== "" ? employee_id : null;
+
+    await logAudit(
+      activeEmployee,
+      "DELETE FILE",
+      `Soft deleted file record ID: ${fileId}. Removed by ${deleted_by || "System"}.`,
+      client_id,
+    );
 
     res.json({ message: `File ${fileId} has been successfully soft deleted` });
   } catch (error) {

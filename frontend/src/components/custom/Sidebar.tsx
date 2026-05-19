@@ -3,6 +3,11 @@
 // Staff can only access Dashboard, Clients, and Plot Map
 // (waiting to be finalized dae ko aram kung okay yn)
 
+// Sidebar component with role based navigation
+// Where Admin can access all links
+// Staff can only access Dashboard, Clients, and Plot Map
+// (waiting to be finalized dae ko aram kung okay yn)
+
 import {
   LayoutDashboard,
   Users,

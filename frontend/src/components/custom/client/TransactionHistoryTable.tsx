@@ -6,7 +6,6 @@ import {
   CreditCard,
   Activity,
   Wrench,
-  ArrowRightLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,10 +24,7 @@ interface TransactionHistoryTableProps {
   statusFilter: string;
   setStatusFilter: (val: string) => void;
   onNewTransaction: () => void;
-  onAction: (
-    action: "payment" | "interment" | "maintenance" | "transfer",
-    txn: any,
-  ) => void;
+  onAction: (action: "payment" | "interment" | "maintenance", txn: any) => void;
 }
 
 export default function TransactionHistoryTable({
@@ -77,7 +73,6 @@ export default function TransactionHistoryTable({
               <option value="All">All Status</option>
               <option value="Completed">Completed</option>
               <option value="Pending">Pending</option>
-              <option value="Transferred">Transferred</option>
             </select>
           </div>
         </div>
@@ -118,17 +113,15 @@ export default function TransactionHistoryTable({
                         txn.status === "Completed"
                           ? "bg-green-100 text-green-700"
                           : txn.status === "Pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : txn.status === "Transferred"
-                              ? "bg-gray-100 text-gray-700"
-                              : "bg-blue-100 text-blue-700"
+                            ? "bg-gray-100 text-gray-700"
+                            : "bg-blue-100 text-blue-700"
                       }`}
                     >
                       {txn.status}
                     </span>
                   </td>
                   <td className="p-4 text-center">
-                    {txn.status !== "Transferred" && (
+                    {txn.status !== "Maintenance" && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" className="h-8 w-8 p-0">
@@ -169,15 +162,6 @@ export default function TransactionHistoryTable({
                           >
                             <Wrench className="mr-2 h-4 w-4 text-orange-600" />{" "}
                             Maintenance
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="cursor-pointer flex items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 font-medium"
-                            onSelect={() => {
-                              setTimeout(() => onAction("transfer", txn), 0);
-                            }}
-                          >
-                            <ArrowRightLeft className="mr-2 h-4 w-4" /> Transfer
-                            Plot
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-import Sidebar from "../../components/custom/Sidebar";
 import { useAddress } from "../../hooks/useAddress";
 
 // Form Components
@@ -55,9 +54,6 @@ function ClientPage() {
   const navigate = useNavigate();
 
   // Custom UI
-  const currentPath = window.location.pathname;
-  const userName = localStorage.getItem("userName") || "Admin User";
-  const userRole = localStorage.getItem("userRole") || "Admin";
   const employeeId = localStorage.getItem("employee_id") || "EMP-001";
 
   // Sheet
@@ -71,13 +67,6 @@ function ClientPage() {
   // Table state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("userName");
-    localStorage.removeItem("userRole");
-    window.location.href = "/";
-  };
 
   // Address data
   const [selectedProvince, setSelectedProvince] = useState<string>("");
@@ -250,7 +239,7 @@ function ClientPage() {
     mutationFn: async (clientID: string) => {
       return await axios.patch(
         `http://localhost:3000/api/clients/${clientID}/delete`,
-        { deleted_by: employeeId },
+        { employee_id: employeeId },
       );
     },
     onSuccess: () => {
@@ -322,14 +311,6 @@ function ClientPage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#faf8f5] font-sans">
-      <Sidebar
-        userRole={userRole}
-        userName={userName}
-        activePath={currentPath}
-        onNavigate={(path) => navigate(path)}
-        onLogout={handleLogout}
-      />
-
       <main className="flex-1 overflow-y-auto p-10">
         {/* Header section */}
         <div className="flex items-start justify-between mb-8">

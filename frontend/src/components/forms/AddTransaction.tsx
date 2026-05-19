@@ -1,7 +1,7 @@
-// This component provides a form for adding new transactions it allows users to search for available plots,
-// select one, and then input transaction details such as agreed price, downpayment, and payment terms
-// the form dynamically calculates the remaining balance and estimated monthly payments based on user input
-// upon submission, it sends the transaction data to the backend API and updates the plot status accordingly
+// This component provides a form for adding new transactions. It allows users to search for available plots,
+// select one, and then input transaction details such as agreed price, downpayment, and payment terms.
+// The form dynamically calculates the remaining balance and estimated monthly payments based on user input.
+// It fetches a list of active employees from the database to populate the "Prepared / Assisted By" dropdown.
 
 import { useState, useEffect } from "react";
 import axios from "axios";
@@ -26,6 +26,7 @@ import {
 
 export default function AddTransaction({ clientId }: { clientId: string }) {
   const [availablePlots, setAvailablePlots] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]); // Dynamic employee list state
   const [open, setOpen] = useState(false);
 
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -42,9 +43,10 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
     remaining_balance: 0,
     status: "Pending",
     years_to_pay: 1,
-    prepared_by: "Admin",
+    prepared_by: "", // Initialized empty to force selection
   });
 
+  // Fetch available plots
   useEffect(() => {
     const fetchPlots = async () => {
       try {
@@ -60,6 +62,20 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
     fetchPlots();
   }, []);
 
+  // Fetch active employees from backend
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const res = await axios.get("http://localhost:3000/api/employees");
+        setEmployees(res.data);
+      } catch (error) {
+        console.error("Failed to fetch employees", error);
+      }
+    };
+    fetchEmployees();
+  }, []);
+
+  // Calculate monthly payments
   useEffect(() => {
     const totalMonths = formData.years_to_pay * 12;
     const monthly =
@@ -114,9 +130,19 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.plot_id) return alert("Please select a valid plot.");
+    if (!formData.prepared_by)
+      return alert("Please select the assisting employee.");
 
     try {
-      await axios.post("http://localhost:3000/api/transactions", formData);
+      // System account physically encoder mapping for Audit Logs
+      const employeeId = localStorage.getItem("employee_id") || null;
+
+      const payload = {
+        ...formData,
+        employee_id: employeeId,
+      };
+
+      await axios.post("http://localhost:3000/api/transactions", payload);
       alert("Transaction saved successfully! The plot is now marked as Sold.");
       window.location.reload();
     } catch (error) {
@@ -152,8 +178,6 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
-          {/* The dropdown content that appears when the user clicks the search button
-              allowing them to select from available plots */}
           <PopoverContent
             className="w-[400px] p-0 bg-white border border-gray-200 shadow-xl rounded-md"
             align="start"
@@ -305,6 +329,31 @@ export default function AddTransaction({ clientId }: { clientId: string }) {
             })}
           </p>
         </div>
+      </div>
+
+      {/* Dynamic Dropdown for Employee Selection */}
+      <div className="flex flex-col gap-2">
+        <Label className="text-sm font-semibold text-gray-700">
+          Prepared / Assisted By
+        </Label>
+        <select
+          className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a] text-gray-800"
+          value={formData.prepared_by}
+          onChange={(e) =>
+            setFormData({ ...formData, prepared_by: e.target.value })
+          }
+          required
+        >
+          <option value="">-- Select Assisting Employee --</option>
+          {employees.map((emp) => {
+            const fullName = `${emp.first_name} ${emp.last_name}`;
+            return (
+              <option key={emp.employee_id} value={fullName}>
+                {fullName} ({emp.role})
+              </option>
+            );
+          })}
+        </select>
       </div>
 
       <Button

@@ -6,7 +6,6 @@ import { ArrowLeft, User, FileText, Trash2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 
 // Modal Components
-import TransferModal from "../../components/modal/TransferModal";
 import MaintenanceModal from "../../components/modal/MaintenanceModal";
 
 // Custom UI
@@ -18,14 +17,16 @@ import {
   DataRow,
 } from "../../components/custom/client/ClientDashboardHelper";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API_URL = "http://localhost:3000";
 
 export default function ClientDashboard() {
   const { id } = useParams();
   const queryClient = useQueryClient();
+  // Get the name and id of the employee base on the localstorage
+  const currentEmployeeId = localStorage.getItem("employee_id") || "";
+  const currentEmployeeName = localStorage.getItem("userName") || "";
 
   // Modal and Drawer
-  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [selectedTransactionForAction, setSelectedTransactionForAction] =
     useState<any>(null);
   const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
@@ -56,7 +57,11 @@ export default function ClientDashboard() {
         type === "co-purchaser"
           ? `${API_URL}/api/contacts/co-purchasers/${recordId}`
           : `${API_URL}/api/contacts/contact-persons/${recordId}`;
-      return axios.delete(endpoint);
+
+      return axios.patch(endpoint, {
+        employee_id: currentEmployeeId,
+        deleted_by: currentEmployeeName,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
@@ -68,7 +73,11 @@ export default function ClientDashboard() {
   // Delete Mutation for Client Files
   const deleteFileMutation = useMutation({
     mutationFn: async (fileId: string) => {
-      return axios.delete(`${API_URL}/api/clients/files/${fileId}`);
+      const endpoint = `${API_URL}/api/clients/files/${fileId}`;
+      return axios.patch(endpoint, {
+        employee_id: currentEmployeeId,
+        deleted_by: currentEmployeeName,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
@@ -90,7 +99,7 @@ export default function ClientDashboard() {
   });
 
   const handleTransactionAction = (
-    action: "payment" | "interment" | "maintenance" | "transfer",
+    action: "payment" | "interment" | "maintenance",
     txn: any,
   ) => {
     setSelectedTransactionForAction(txn);
@@ -98,8 +107,6 @@ export default function ClientDashboard() {
       setActiveDrawer(action);
     } else if (action === "maintenance") {
       setIsMaintenanceModalOpen(true);
-    } else if (action === "transfer") {
-      setIsTransferModalOpen(true);
     }
   };
 
@@ -432,18 +439,6 @@ export default function ClientDashboard() {
         availableContactTxns={availableContactTxns}
         selectedTransaction={selectedTransactionForAction}
         onSuccess={closeDrawerAndRefresh}
-      />
-
-      <TransferModal
-        isOpen={isTransferModalOpen}
-        onClose={() => {
-          setIsTransferModalOpen(false);
-          setSelectedTransactionForAction(null);
-        }}
-        transaction={selectedTransactionForAction}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ["client", id] });
-        }}
       />
 
       <MaintenanceModal

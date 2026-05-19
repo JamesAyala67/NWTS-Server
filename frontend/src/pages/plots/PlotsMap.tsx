@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Map as MapIcon,
@@ -19,10 +18,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { toast } from "sonner";
 
 // --- IMPORTED COMPONENTS ---
-import Sidebar from "../../components/custom/Sidebar";
 import {
   StatCard,
   SectionHeader,
@@ -89,11 +86,7 @@ export const getYear = (dateString?: string) => {
 };
 
 export default function PlotMap() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const currentPath = window.location.pathname;
-  const userName = localStorage.getItem("userName") || "Admin User";
-  const userRole = localStorage.getItem("userRole") || "Admin";
 
   // state variables for plot selection, search, filters, and modal
   const [selectedPlot, setSelectedPlot] = useState<Plot | null>(null);
@@ -146,9 +139,12 @@ export default function PlotMap() {
   const blockData = useMemo(() => {
     const grouped: Record<string, number> = {};
     plots.forEach((p) => {
-      const lotNum = parseInt(p.lot, 10);
-      if (!grouped[p.block] || lotNum > grouped[p.block]) {
-        grouped[p.block] = lotNum;
+      // Ensure we are working with safe numbers to prevent NaN errors
+      const lotNum = parseInt(String(p.lot), 10);
+      if (!isNaN(lotNum)) {
+        if (!grouped[p.block] || lotNum > grouped[p.block]) {
+          grouped[p.block] = lotNum;
+        }
       }
     });
 
@@ -204,8 +200,15 @@ export default function PlotMap() {
         {/* Generate plot buttons based on total lots, applying filters and search criteria */}
         {Array.from({ length: totalLots }).map((_, i) => {
           const num = (i + 1).toString().padStart(2, "0");
-          const id = `B${blockNum}-L${num}`;
-          const data = plots.find((p) => p.plot_id === id);
+
+          // FIX: Match by exact block and lot from the database, not by a guessed plot_id string
+          const data = plots.find(
+            (p) =>
+              String(p.block) === String(blockNum) && Number(p.lot) === i + 1,
+          );
+
+          // Use the real plot_id from the DB if it exists, otherwise fall back to the generated string
+          const displayId = data?.plot_id || `B${blockNum}-L${num}`;
 
           const matchesType =
             filterType === "All Types" || data?.plot_type === filterType;
@@ -216,17 +219,20 @@ export default function PlotMap() {
 
           const matchesSearch =
             !normalizedSearch ||
-            id.toLowerCase().includes(normalizedSearch) ||
+            displayId.toLowerCase().includes(normalizedSearch) ||
             data?.owner_name?.toLowerCase().includes(normalizedSearch) ||
             data?.interments?.some((interment) =>
               interment.deceased_name.toLowerCase().includes(normalizedSearch),
             );
 
           const isDimmed = !matchesType || !matchesSearch || !matchesSection;
-          const isSelected = selectedPlot?.plot_id === id;
+
+          // FIX: Safely check if this specific plot is selected
+          const isSelected =
+            selectedPlot && data && selectedPlot.plot_id === data.plot_id;
 
           return (
-            <div key={id}>
+            <div key={displayId}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -249,7 +255,7 @@ export default function PlotMap() {
                 {data && (
                   <TooltipContent className="text-[10px] font-bold bg-[#3d4a3d] text-white border-none p-3 shadow-xl z-50">
                     <p className="border-b border-white/20 pb-1 mb-1">
-                      {id} • {data.plot_type ?? "No Type"}
+                      {displayId} • {data.plot_type ?? "No Type"}
                     </p>
                     {data.interments && data.interments.length > 0 ? (
                       <div className="space-y-1">
@@ -307,24 +313,10 @@ export default function PlotMap() {
     );
   }
 
-  const handleLogout = () => {
-    localStorage.clear();
-    window.location.href = "/";
-  };
-
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen bg-[#f7f6f0] font-sans text-[#1a1c1a] overflow-hidden">
-        {/* Navigation Bar */}
-        <Sidebar
-          userRole={userRole}
-          userName={userName}
-          activePath={currentPath}
-          onNavigate={(path) => navigate(path)}
-          onLogout={handleLogout}
-        />
-
-        {/* Main Content */}
+      <div className="flex h-full min-h-[calc(100vh-4rem)] -m-4 md:-m-8 bg-[#f7f6f0] font-sans text-[#1a1c1a] overflow-hidden rounded-xl border border-gray-200">
+        {/* Main Map Content */}
         <main className="flex-1 flex flex-col overflow-hidden relative">
           <header className="px-6 py-4 flex justify-between items-center bg-white border-b border-gray-100 shadow-sm z-20">
             <div className="flex items-center gap-6">

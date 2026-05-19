@@ -3,48 +3,65 @@ const db = require("../config/db");
 
 /**
  * Reusable function to record an audit log.
- * @param {string} employee_id - The ID of the admin/employee making the change
- * @param {string} action_type - e.g., 'CREATE CLIENT', 'EDIT CLIENT', 'DELETE CLIENT'
- * @param {string} description - A readable sentence of what happened
- * @param {string|null} client_id - Optional ID of the client involved
- * @param {Object} connection - The SQL transaction connection (optional, defaults to standard db pool)
+ * Automatically handles flexible positional arguments for transactions and connections.
+ * * @param {string} employee_id - The ID of the employee making the change
+ * @param {string} action_type - e.g., 'CREATE TRANSACTION', 'RESTORE FILE'
+ * @param {string} description - Readable summary of the action
+ * @param {string|Object|null} idOrConnection - Optional ID string (Client/Txn) OR connection object
+ * @param {Object|null} connectionParam - Optional database transaction connection
  */
 async function logAudit(
   employee_id,
   action_type,
   description,
-  client_id = null,
-  connection = db,
+  idOrConnection = null,
+  connectionParam = null,
 ) {
   try {
     let client_id = null;
-    let connection = db;
+    let transaction_id = null;
+    let activeConnection = db; // Default to standard connection pool
 
-    // Smart parameter handling: detect if arg4 is a connection or a client_id string
-    if (client_id && typeof client_id.query === "function") {
-      connection = client_id;
-    } else {
-      if (typeof client_id === "string") client_id = client_id;
-      if (connection && typeof connection.query === "function")
-        connection = connection;
+    // Inspect the 4th argument
+    if (idOrConnection && typeof idOrConnection.query === "function") {
+      // If the 4th argument is a database connection object
+      activeConnection = idOrConnection;
+    } else if (typeof idOrConnection === "string") {
+      // If the 4th argument is an ID string, check its prefix
+      if (
+        idOrConnection.startsWith("TXN") ||
+        idOrConnection.startsWith("MNT")
+      ) {
+        transaction_id = idOrConnection;
+      } else {
+        client_id = idOrConnection;
+      }
+    }
+    // Inspect the 5th argument
+    if (connectionParam && typeof connectionParam.query === "function") {
+      // If a dedicated transaction connection was passed as the 5th argument
+      activeConnection = connectionParam;
     }
 
-    // Generate bulletproof ID
+    // Generate ID
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const audit_id = `AUD-${Date.now()}-${randomSuffix}`;
 
+    //
     const query = `
-      INSERT INTO audit_logs (audit_id, employee_id, client_id, action_type, action_description) 
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO audit_logs (audit_id, employee_id, client_id, transaction_id, action_type, action_description) 
+      VALUES (?, ?, ?, ?, ?, ?)
     `;
 
-    await connection.query(query, [
+    await activeConnection.query(query, [
       audit_id,
       employee_id,
       client_id,
+      transaction_id,
       action_type,
       description,
     ]);
+
     return true;
   } catch (error) {
     console.error("Failed to write to audit log:", error);

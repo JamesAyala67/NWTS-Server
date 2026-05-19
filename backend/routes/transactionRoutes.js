@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
+const logAudit = require("../utils/auditLogger");
 
 // Record a new transaction
 router.post("/", async (req, res) => {
@@ -20,11 +21,14 @@ router.post("/", async (req, res) => {
       status,
       years_to_pay,
       prepared_by,
+      employee_id,
     } = req.body;
+
+    const activeEmployee = employee_id || prepared_by || "EMP-001";
 
     await connection.beginTransaction();
 
-    // Insert a new transaction record
+    // Insert new transaction record
     await connection.query(
       `INSERT INTO transactions 
       (transaction_id, client_id, plot_id, plot_type, plot_size, plot_price, downpayment, monthlypayment, remaining_balance, status, years_to_pay, prepared_by) 
@@ -45,20 +49,27 @@ router.post("/", async (req, res) => {
       ],
     );
 
-    // Update the plot status to ""Sold" after successful transaction recording
-    // PS: Dae ko aram kung anong tama lalaag ko digdi
+    // Update the plot status to Reserved
     await connection.query(
       "UPDATE plots SET status = 'Reserved' WHERE plot_id = ?",
       [plot_id],
+    );
+
+    // 3. Write to Audit Logs
+    await logAudit(
+      activeEmployee,
+      "CREATE TRANSACTION",
+      `Created transaction ${transaction_id} for client ID ${client_id} (Plot: ${plot_id}). Balance: ₱${remaining_balance}`,
+      transaction_id,
+      connection,
     );
 
     await connection.commit();
 
     res
       .status(201)
-      .json({ message: "Transaction saved and plot marked as Sold!" });
+      .json({ message: "Transaction saved and plot marked as Reserved" });
   } catch (error) {
-    // UNDO EVERYTHING IF EITHER QUERY FAILS
     await connection.rollback();
     console.error(error);
     res.status(500).json({ error: "Failed to save transaction" });
@@ -66,10 +77,12 @@ router.post("/", async (req, res) => {
     connection.release();
   }
 });
+
 // Handles Transaction with its associated details
 router.get("/:id", async (req, res) => {
   try {
     const transactionId = req.params.id;
+
     // Fetch Transaction, Plots, and Client Details
     const [rows] = await db.query(
       `SELECT t.*, p.block, p.lot, c.first_name, c.last_name 
@@ -79,15 +92,17 @@ router.get("/:id", async (req, res) => {
        WHERE t.transaction_id = ?`,
       [transactionId],
     );
+
     if (rows.length === 0) {
       return res.status(404).json({ error: "Transaction not found" });
     }
+
     // Fetch all associated payments for this Transaction
     const [payments] = await db.query(
       "SELECT * FROM payments WHERE transaction_id = ? ORDER BY payment_date DESC",
       [transactionId],
     );
-    // Send the combined Transaction and Payments data
+
     res.json({
       ...rows[0],
       payments: payments,
@@ -98,70 +113,9 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Handles Plot Transfer between Clients (TANGAL NA NI SABI NI DAVID)
-router.post("/transfer", async (req, res) => {
-  const connection = await db.getConnection();
-
-  try {
-    const {
-      old_transaction_id,
-      new_client_id,
-      plot_id,
-      transfer_fee,
-      prepared_by,
-    } = req.body;
-
-    await connection.beginTransaction();
-
-    await connection.query(
-      "UPDATE transactions SET status = 'Transferred' WHERE transaction_id = ?",
-      [old_transaction_id],
-    );
-
-    const [oldTxnRows] = await connection.query(
-      "SELECT plot_type, plot_size FROM transactions WHERE transaction_id = ?",
-      [old_transaction_id],
-    );
-
-    if (oldTxnRows.length === 0)
-      throw new Error("Original transaction not found.");
-    const { plot_type, plot_size } = oldTxnRows[0];
-
-    const new_transaction_id = `TXN-TRF-${Date.now()}`;
-    await connection.query(
-      `INSERT INTO transactions 
-      (transaction_id, client_id, plot_id, plot_type, plot_size, plot_price, downpayment, monthlypayment, remaining_balance, status, years_to_pay, prepared_by) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        new_transaction_id,
-        new_client_id,
-        plot_id,
-        plot_type,
-        plot_size,
-        transfer_fee || 0,
-        0,
-        0,
-        0,
-        "Completed",
-        0,
-        prepared_by,
-      ],
-    );
-
-    await connection.commit();
-    res.status(200).json({ message: "Plot successfully transferred!" });
-  } catch (error) {
-    await connection.rollback();
-    console.error("Transfer error:", error);
-    res.status(500).json({ error: "Failed to transfer plot." });
-  } finally {
-    connection.release();
-  }
-});
-
-// log a maintenance for a specific transaction (Kaiba kani and Audit_Logs)
+// Log a maintenance for a specific transaction
 router.post("/maintenance", async (req, res) => {
-  const connection = await db.getConnection(); // Get connection for transaction
+  const connection = await db.getConnection();
 
   try {
     const {
@@ -172,9 +126,11 @@ router.post("/maintenance", async (req, res) => {
       payment_status,
       scheduled_date,
       prepared_by,
+      employee_id,
     } = req.body;
 
-    // Start SQL Transaction
+    const activeEmployee = employee_id || prepared_by || "EMP-001";
+
     await connection.beginTransaction();
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -186,7 +142,7 @@ router.post("/maintenance", async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    // 1. Insert the maintenance log
+    // Insert new Maintenance Record
     await connection.query(insertLogQuery, [
       maintenance_id,
       plot_id,
@@ -198,30 +154,36 @@ router.post("/maintenance", async (req, res) => {
       prepared_by || "Admin",
     ]);
 
-    // 2. Update the Plot Status to "Maintenance"
+    // Update the Plot Status to Maintenance
     await connection.query(
       "UPDATE plots SET status = 'Maintenance' WHERE plot_id = ?",
       [plot_id],
     );
 
-    // Commit both changes
+    // Write to Audit Logs
+    await logAudit(
+      activeEmployee,
+      "SCHEDULE MAINTENANCE",
+      `Scheduled maintenance tasks for Plot ${plot_id}. Status set to Pending.`,
+      transaction_id,
+      connection,
+    );
+
     await connection.commit();
 
     res.status(201).json({
       message: "Maintenance scheduled and plot updated to Maintenance!",
     });
   } catch (error) {
-    // If either query fails, undo everything
     await connection.rollback();
     console.error("Error logging maintenance:", error);
     res.status(500).json({ error: "Failed to schedule maintenance." });
   } finally {
-    // Release the connection back to the pool
     connection.release();
   }
 });
 
-// Fetch all maintenance logs with associated transaction and client details (pKaiba kani ang Audit_logs)
+// Fetch all maintenance logs with associated transaction and client details
 router.get("/maintenance", async (req, res) => {
   try {
     const query = `
@@ -232,7 +194,6 @@ router.get("/maintenance", async (req, res) => {
       ORDER BY m.created_at DESC
     `;
     const [logs] = await db.query(query);
-
     res.json(logs);
   } catch (error) {
     console.error("Error fetching maintenance logs:", error);
@@ -240,7 +201,7 @@ router.get("/maintenance", async (req, res) => {
   }
 });
 
-// Fetch maintenance logs for a specific transaction (Kaiba kani ang Audit_Logs)
+// Fetch maintenance logs for a specific transaction
 router.get("/:transactionId/maintenance", async (req, res) => {
   try {
     const { transactionId } = req.params;
@@ -250,7 +211,6 @@ router.get("/:transactionId/maintenance", async (req, res) => {
       ORDER BY scheduled_date DESC
     `;
     const [logs] = await db.query(query, [transactionId]);
-
     res.json(logs);
   } catch (error) {
     console.error("Error fetching transaction maintenance logs:", error);
@@ -258,17 +218,64 @@ router.get("/:transactionId/maintenance", async (req, res) => {
   }
 });
 
-// Update maintenance payment status to "Paid" (Kaiba kani ang Audit_Logs)
+// Update maintenance payment status to Paid
 router.patch("/maintenance/:id/pay", async (req, res) => {
+  const connection = await db.getConnection();
+
   try {
     const { id } = req.params;
-    await db.query(
+    const employee_id =
+      req.body.employee_id || req.body.prepared_by || "EMP-001";
+
+    await connection.beginTransaction();
+
+    // Fetch the maintenance log to find out which plot we are dealing with
+    const [logRows] = await connection.query(
+      "SELECT plot_id, transaction_id FROM maintenance_logs WHERE maintenance_id = ?",
+      [id],
+    );
+
+    if (logRows.length === 0) {
+      throw new Error("Maintenance log not found.");
+    }
+
+    const { plot_id, transaction_id } = logRows[0];
+
+    // Mark the maintenance as Paid
+    await connection.query(
       "UPDATE maintenance_logs SET payment_status = 'Paid' WHERE maintenance_id = ?",
       [id],
     );
-    res.json({ message: "Maintenance marked as paid!" });
+
+    // Figure out what the plot status should be reverted to
+    const revertedStatus = transaction_id ? "Occupied" : "Available";
+
+    // Update the Plot Status
+    await connection.query("UPDATE plots SET status = ? WHERE plot_id = ?", [
+      revertedStatus,
+      plot_id,
+    ]);
+
+    // Write to Audit Logs
+    await logAudit(
+      employee_id,
+      "COMPLETE MAINTENANCE",
+      `Marked maintenance ${id} as Paid and reverted Plot ${plot_id} to ${revertedStatus}.`,
+      transaction_id,
+      connection,
+    );
+
+    await connection.commit();
+    res.json({
+      message: `Maintenance marked as paid and plot reverted to ${revertedStatus}!`,
+    });
   } catch (error) {
+    await connection.rollback();
+    console.error("Error updating maintenance status:", error);
     res.status(500).json({ error: "Failed to update status." });
+  } finally {
+    connection.release();
   }
 });
+
 module.exports = router;
