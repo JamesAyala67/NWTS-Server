@@ -42,10 +42,10 @@ export default function ClientDashboard() {
   const [selectedTransactionForPr, setSelectedTransactionForPr] =
     useState<any>(null);
   const [activeDrawer, setActiveDrawer] = useState<
-    | "transaction" // AddTransaction.tsx
+    | "transaction"
     | "copurchaser"
     | "contact"
-    | "payment" // AddPayments.tsx
+    | "payment"
     | "interment"
     | "file"
     | null
@@ -64,31 +64,25 @@ export default function ClientDashboard() {
       recordId: string;
     }) => {
       const userRole = localStorage.getItem("userRole");
-
       if (userRole === "Admin") {
-        // Direct Delete for Admins (Assuming you have these endpoints in contactRoutes)
         const endpoint =
           type === "co-purchaser"
             ? `/contacts/co-purchasers/${recordId}/delete`
             : `/contacts/contact-persons/${recordId}/delete`;
-
         return api.patch(endpoint, {
           employee_id: currentEmployeeId,
           deleted_by: currentEmployeeName,
         });
       } else {
-        // Send to Request Queue for Staff
         const endpoint =
           type === "co-purchaser"
             ? `/requests/stage-copurchaser/${recordId}`
             : `/requests/stage-contact/${recordId}`;
-
         return api.post(endpoint, { submitter_name: currentEmployeeName });
       }
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
-
       if (localStorage.getItem("userRole") === "Admin") {
         toast.success("Record removed successfully");
       } else {
@@ -103,15 +97,12 @@ export default function ClientDashboard() {
   const deleteFileMutation = useMutation({
     mutationFn: async (fileId: string) => {
       const userRole = localStorage.getItem("userRole");
-
       if (userRole === "Admin") {
-        // Direct Delete for Admins (uses your existing clientRoutes.js)
         return api.patch(`/clients/files/${fileId}`, {
           employee_id: currentEmployeeId,
           deleted_by: currentEmployeeName,
         });
       } else {
-        // Send to Request Queue for Staff
         return api.post(`/requests/stage-file/${fileId}`, {
           submitter_name: currentEmployeeName,
         });
@@ -119,7 +110,6 @@ export default function ClientDashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
-
       if (localStorage.getItem("userRole") === "Admin") {
         toast.success("File removed successfully");
       } else {
@@ -154,6 +144,7 @@ export default function ClientDashboard() {
       setIsMaintenanceModalOpen(true);
     }
   };
+
   const handlePrClick = (txn: any) => {
     setSelectedTransactionForPr(txn);
     setIsPrModalOpen(true);
@@ -167,22 +158,18 @@ export default function ClientDashboard() {
   const { availableCoPurchaserTxns, availableContactTxns } = useMemo(() => {
     if (!client)
       return { availableCoPurchaserTxns: [], availableContactTxns: [] };
-
     const assignedCpIds =
       client.co_purchasers
         ?.filter((cp: any) => cp.is_deleted !== 1)
         .map((cp: any) => cp.transaction_id) || [];
-
     const assignedContactIds =
       client.contact_persons
         ?.filter((c: any) => c.is_deleted !== 1)
         .map((c: any) => c.transaction_id) || [];
-
     const unassignedCpTxns =
       client.transactions?.filter(
         (txn: any) => !assignedCpIds.includes(txn.transaction_id),
       ) || [];
-
     const unassignedContactTxns =
       client.transactions?.filter(
         (txn: any) => !assignedContactIds.includes(txn.transaction_id),
@@ -194,26 +181,21 @@ export default function ClientDashboard() {
     };
   }, [client]);
 
-  // Combine Transactions and Payments
   const combinedLedger = useMemo(() => {
     if (!client) return [];
-
     const txns = client.transactions || [];
     const payments = client.payments || [];
-
-    // Combine them and sort by date
     return [...txns, ...payments].sort((a, b) => {
       const dateA = new Date(
         a.payment_date || a.transaction_date || a.date_created || 0,
       );
       const dateB = new Date(
-        b.payment_date || b.transaction_date || b.date_created || 0,
+        a.payment_date || a.transaction_date || a.date_created || 0,
       );
       return dateB.getTime() - dateA.getTime();
     });
   }, [client]);
 
-  // 2. Filter the COMBINED ledger for the table
   const filteredTransactions = useMemo(() => {
     return combinedLedger.filter((item: any) => {
       const matchesSearch =
@@ -222,20 +204,13 @@ export default function ClientDashboard() {
           .includes(searchTerm.toLowerCase()) ||
         item.sales_invoice?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.plot_id?.toLowerCase().includes(searchTerm.toLowerCase());
-
       const isPayment = !!item.payment_id;
       let matchesStatus = true;
-
       if (statusFilter !== "All") {
-        if (statusFilter === "Transaction") {
-          matchesStatus = !isPayment; // FIXED: Assign to matchesStatus instead of returning early
-        } else if (statusFilter === "Payment") {
-          matchesStatus = isPayment;
-        } else {
-          matchesStatus = !isPayment && item.status === statusFilter;
-        }
+        if (statusFilter === "Transaction") matchesStatus = !isPayment;
+        else if (statusFilter === "Payment") matchesStatus = isPayment;
+        else matchesStatus = !isPayment && item.status === statusFilter;
       }
-
       return matchesSearch && matchesStatus;
     });
   }, [combinedLedger, searchTerm, statusFilter]);
@@ -302,6 +277,7 @@ export default function ClientDashboard() {
         <ArrowLeft className="mr-2 h-4 w-4" /> Back to Client List
       </Link>
 
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
         <div className="flex items-center gap-4">
           <div className="h-20 w-20 rounded-full bg-[#4a5a4a] flex items-center justify-center text-white text-3xl font-bold shadow-inner">
@@ -338,12 +314,13 @@ export default function ClientDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      {/* Info Cards Grid - Adjusted to full width uniformly */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <InfoCard
           title="Client Profile"
           icon={<User className="h-4 w-4 text-[#4a5a4a]" />}
         >
-          <div className="space-y-2 text-sm">
+          <div className="space-y-2 text-sm mt-4">
             <DataRow label="Full Name" value={fullName} />
             <DataRow label="Contact Number" value={client.contact_number} />
             <DataRow label="Civil Status" value={client.civil_status} />
@@ -376,11 +353,6 @@ export default function ClientDashboard() {
                     <p className="text-[9px] text-gray-500 font-mono mt-0.5 bg-white inline-block px-1 rounded border border-gray-100">
                       REF: {cp.transaction_id?.substring(0, 8) || "N/A"}
                     </p>
-                    {cp.contact_number && (
-                      <span className="ml-1 text-gray-400 font-mono text-[8px]">
-                        {cp.contact_number}
-                      </span>
-                    )}
                   </div>
                   <Trash2
                     onClick={() =>
@@ -420,11 +392,6 @@ export default function ClientDashboard() {
                     <p className="text-[9px] text-gray-500 font-mono mt-0.5 bg-white inline-block px-1 rounded border border-gray-100">
                       REF: {contact.transaction_id?.substring(0, 8) || "N/A"}
                     </p>
-                    {contact.contact_number && (
-                      <span className="ml-1 text-gray-400 font-mono text-[8px]">
-                        {contact.contact_number}
-                      </span>
-                    )}
                   </div>
                   <Trash2
                     onClick={() =>
@@ -452,17 +419,11 @@ export default function ClientDashboard() {
               {client.client_files
                 .filter((f: any) => f.is_deleted !== 1)
                 .map((file: any) => {
-                  // 1. Standardize formatting to prevent duplicate slashes or dot-segments
-                  let cleanPath = file.file_path.replace(/\\/g, "/");
-                  if (cleanPath.startsWith("../")) {
-                    cleanPath = cleanPath.replace("../", "");
-                  }
-
-                  // 2. CRITICAL FIX: Extract the structural base URL out of the API_BASE_URL parameter
-                  // Drops "/api" so it addresses "http://localhost:3000/uploads/..." directly
+                  let cleanPath = file.file_path
+                    .replace(/\\/g, "/")
+                    .replace("../", "");
                   const serverBaseUrl = API_BASE_URL.replace(/\/api$/, "");
                   const fileUrl = `${serverBaseUrl}/${cleanPath}`;
-
                   return (
                     <div
                       key={file.file_id}
@@ -487,7 +448,7 @@ export default function ClientDashboard() {
                         </div>
                       </a>
                       <Trash2
-                        onClick={(e: React.MouseEvent<SVGSVGElement>) => {
+                        onClick={(e: React.MouseEvent) => {
                           e.stopPropagation();
                           handleDeleteFile(file.file_id);
                         }}
@@ -502,14 +463,14 @@ export default function ClientDashboard() {
       </div>
 
       <TransactionHistoryTable
-        transactions={filteredTransactions} // <-- Pass the FILTERED list, not combinedLedger
+        transactions={filteredTransactions}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
         onNewTransaction={() => setActiveDrawer("transaction")}
-        onAction={handleTransactionAction} // <-- Changed from handleAction
-        onPrClick={handlePrClick} // <-- Attached the new function
+        onAction={handleTransactionAction}
+        onPrClick={handlePrClick}
       />
 
       <TransactionDetailsModal

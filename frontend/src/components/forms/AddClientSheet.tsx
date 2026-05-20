@@ -34,6 +34,9 @@ interface AddClientSheetProps {
   employees: any[];
 }
 
+// Component for adding a new client, used in ClientDashboard
+// Contains form fields for personal info and address details,
+// with dynamic dropdowns for location based on PSGC codes
 export default function AddClientSheet({
   isOpen,
   setIsOpen,
@@ -69,7 +72,7 @@ export default function AddClientSheet({
               <Input
                 id="first_name"
                 placeholder="e.g. Juan"
-                value={formData.first_name || ""}
+                value={formData.first_name}
                 onChange={(e) =>
                   setFormData({ ...formData, first_name: e.target.value })
                 }
@@ -81,7 +84,7 @@ export default function AddClientSheet({
               <Input
                 id="last_name"
                 placeholder="e.g. Dela Cruz"
-                value={formData.last_name || ""}
+                value={formData.last_name}
                 onChange={(e) =>
                   setFormData({ ...formData, last_name: e.target.value })
                 }
@@ -93,7 +96,7 @@ export default function AddClientSheet({
               <Input
                 id="middle_name"
                 placeholder="e.g. Santos"
-                value={formData.middle_name || ""}
+                value={formData.middle_name}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
@@ -113,14 +116,15 @@ export default function AddClientSheet({
               <Input
                 id="birthdate"
                 type="date"
-                /* Directly managing birthdate as a 'YYYY-MM-DD' string state 
-                  safeguards native HTML5 input value binding
-                */
-                value={formData.birthdate || ""}
+                value={
+                  formData.birthdate
+                    ? new Date(formData.birthdate).toISOString().split("T")[0]
+                    : ""
+                }
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    birthdate: e.target.value,
+                    birthdate: new Date(e.target.value),
                   })
                 }
                 required
@@ -131,7 +135,7 @@ export default function AddClientSheet({
               <select
                 id="status"
                 className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a]"
-                value={formData.civil_status || ""}
+                value={formData.civil_status}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
@@ -152,7 +156,7 @@ export default function AddClientSheet({
               <Input
                 id="contact"
                 placeholder="09123456789"
-                value={formData.contact_number || ""}
+                value={formData.contact_number}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
@@ -173,11 +177,12 @@ export default function AddClientSheet({
             </Label>
 
             <div className="space-y-2">
+              {/* Province Dropdown - Populated from PSGC API */}
               <Label htmlFor="province">Province</Label>
               <select
                 id="province"
                 className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a]"
-                value={formData.province || ""}
+                value={formData.province}
                 onChange={(e) => {
                   setSelectedProvince(e.target.value);
                   setFormData({
@@ -200,11 +205,12 @@ export default function AddClientSheet({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
+                {/* City Dropdown - Populated based on selected province */}
                 <Label htmlFor="city">City / Municipality</Label>
                 <select
                   id="city"
                   className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a]"
-                  value={formData.city || ""}
+                  value={formData.city}
                   disabled={!formData.province}
                   onChange={(e) => {
                     setSelectedCity(e.target.value);
@@ -226,11 +232,12 @@ export default function AddClientSheet({
               </div>
 
               <div className="space-y-2">
+                {/* Barangay Dropdown - Populated based on selected city */}
                 <Label htmlFor="barangay">Barangay</Label>
                 <select
                   id="barangay"
                   className="flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a]"
-                  value={formData.barangay || ""}
+                  value={formData.barangay}
                   disabled={!formData.city}
                   onChange={(e) => {
                     setSelectedBarangay(e.target.value);
@@ -249,12 +256,13 @@ export default function AddClientSheet({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="prepared_by">Prepared By (Assisting Staff)</Label>
+          <div className="flex flex-col gap-2 mt-4">
+            <label className="text-sm font-medium text-gray-700">
+              Prepared By (Assisting Staff)
+            </label>
             <select
-              id="prepared_by"
               className="flex h-10 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4a5a4a]"
-              value={formData.prepared_by || ""}
+              value={formData.prepared_by}
               onChange={(e) =>
                 setFormData({ ...formData, prepared_by: e.target.value })
               }
@@ -263,7 +271,7 @@ export default function AddClientSheet({
               <option value="" disabled>
                 Select an employee...
               </option>
-              {employees?.map((emp) => (
+              {employees.map((emp) => (
                 <option key={emp.employee_id} value={emp.employee_id}>
                   {emp.first_name} {emp.last_name} ({emp.employee_id})
                 </option>
@@ -273,11 +281,7 @@ export default function AddClientSheet({
 
           <div className="flex items-center gap-3 pt-6">
             <SheetClose asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 border-gray-300"
-              >
+              <Button variant="outline" className="flex-1 border-gray-300">
                 Cancel
               </Button>
             </SheetClose>

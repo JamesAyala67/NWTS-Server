@@ -67,15 +67,16 @@ export default function DashboardLayout({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Mobile Header (Only visible on small screens) */}
-        <header className="md:hidden bg-[#4A5D4E] text-white p-4 flex items-center justify-between shrink-0 shadow-md">
+        <header className="md:hidden bg-[#4A5D4E] text-white p-4 flex items-center justify-between shrink-0 shadow-md relative z-50">
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-serif font-bold tracking-wide">
               NEW HEAVEN'S WAY
             </h1>
           </div>
           <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-1 hover:bg-white/10 rounded-md transition"
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+            className="p-1.5 hover:bg-white/10 rounded-md transition active:scale-95"
+            aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
           >
             {isMobileMenuOpen ? (
               <X className="h-6 w-6" />

@@ -151,11 +151,8 @@ export default function AddPayment({
   // -- Submit Mutation --
   const paymentMutation = useMutation({
     mutationFn: async (data: any) => {
-      // Step 1: Submit Payment Data
-      const paymentRes = await api.post("/payments", {
-        ...data,
-        employee_id: currentEmployeeId, // Still pass the system logged-in ID for auditing
-      });
+      // Step 1: Submit Payment Data (Includes employee_id inside layout payload)
+      const paymentRes = await api.post("/payments", data);
 
       // Step 2: Upload Files sequentially if a client ID is provided
       if (selectedFiles.length > 0 && clientId) {
@@ -208,7 +205,8 @@ export default function AddPayment({
         reference_number: formData.referenceNumber,
         payment_date: formData.paymentDate,
         remarks: formData.remarks,
-        recorded_by: formData.recorded_by, // Send to DB
+        recorded_by: formData.recorded_by, // Field representative name string
+        employee_id: currentEmployeeId, // System Administrator primary key ID for log processing
       });
     }
   };
@@ -345,7 +343,7 @@ export default function AddPayment({
                 maxLength={4}
                 value={formData.prNumber}
                 onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, ""); // Strictly numbers
+                  const val = e.target.value.replace(/\D/g, "");
                   setFormData((prev) => ({ ...prev, prNumber: val }));
                   if (errors.prNumber)
                     setErrors((prev) => ({ ...prev, prNumber: "" }));
@@ -379,7 +377,7 @@ export default function AddPayment({
                 maxLength={6}
                 value={formData.siNumber}
                 onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, ""); // Strictly numbers
+                  const val = e.target.value.replace(/\D/g, "");
                   setFormData((prev) => ({ ...prev, siNumber: val }));
                   if (errors.siNumber)
                     setErrors((prev) => ({ ...prev, siNumber: "" }));

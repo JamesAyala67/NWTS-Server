@@ -10,88 +10,92 @@ router.get("/summary", async (req, res) => {
       `SELECT status, COUNT(*) as count FROM plots GROUP BY status`,
     );
 
-    // B. Fetch 5 most recent transactions
-    const transactionsPromise = db.query(`
-      SELECT 
-        t.client_id,
-        CONCAT(c.first_name, ' ', c.last_name) AS client_name, 
-        t.date_created AS date, 
-        CONCAT('Block ', p.block, ' Lot ', p.lot) AS plot, 
-        t.monthlypayment AS amount, 
-        t.status 
-      FROM transactions t 
-      JOIN clients c ON t.client_id = c.client_id 
-      LEFT JOIN plots p ON t.plot_id = p.plot_id
-      WHERE t.is_deleted = 0 AND c.is_deleted = 0 
-      ORDER BY t.date_created DESC LIMIT 5
+    // B. Combine 8 most recent Transactions AND Payments into a single feed
+    const recentActivityPromise = db.query(`
+      (
+        SELECT 
+          'transaction' as record_type,
+          t.transaction_id as id,
+          t.client_id,
+          CONCAT(c.first_name, ' ', c.last_name) AS client_name,
+          t.date_created AS date,
+          t.professional_receipt,
+          t.sales_invoice,
+          CONCAT('Block ', p.block, ' Lot ', p.lot) AS plot,
+          p.plot_type,
+          t.plot_price AS amount,
+          t.remaining_balance,
+          t.status
+        FROM transactions t
+        JOIN clients c ON t.client_id = c.client_id
+        LEFT JOIN plots p ON t.plot_id = p.plot_id
+        WHERE t.is_deleted = 0 AND c.is_deleted = 0
+      )
+      UNION ALL
+      (
+        SELECT 
+          'payment' as record_type,
+          pay.payment_id as id,
+          t.client_id,
+          CONCAT(c.first_name, ' ', c.last_name) AS client_name,
+          pay.payment_date AS date,
+          pay.professional_receipt, -- FIXED: Changed from pay.receipt_number
+          t.sales_invoice,
+          CONCAT('Block ', p.block, ' Lot ', p.lot) AS plot,
+          p.plot_type,
+          pay.amount_paid AS amount,
+          t.remaining_balance,
+          'Paid' AS status
+        FROM payments pay
+        JOIN transactions t ON pay.transaction_id = t.transaction_id
+        JOIN clients c ON t.client_id = c.client_id
+        LEFT JOIN plots p ON t.plot_id = p.plot_id
+        WHERE t.is_deleted = 0 AND c.is_deleted = 0
+      )
+      ORDER BY date DESC
+      LIMIT 8
     `);
 
-    // C. Strict Notice Evaluator: Unpaid items older than 30 Days (Excludes Cleared/Paid rows)
-    const noticesPromise = db.query(`
+    // C. Fetch Active Transactions to calculate Overdue logic
+    const activeTransactionsPromise = db.query(`
       SELECT 
-        t.client_id,
-        CONCAT(c.first_name, ' ', c.last_name) AS client_name, 
-        t.remaining_balance, 
-        t.date_created AS due_date,
-        DATEDIFF(NOW(), t.date_created) AS days_overdue
+        t.transaction_id, t.client_id, CONCAT(c.first_name, ' ', c.last_name) AS client_name, 
+        t.professional_receipt AS pr_number, t.sales_invoice AS si_number, 
+        t.plot_price, t.downpayment, t.due_date,
+        t.remaining_balance, t.monthlypayment, t.date_created
       FROM transactions t 
       JOIN clients c ON t.client_id = c.client_id
-      WHERE t.is_deleted = 0 
-        AND c.is_deleted = 0 
+      WHERE t.is_deleted = 0 AND c.is_deleted = 0 
         AND t.remaining_balance > 0 
-        AND t.status NOT IN ('Paid', 'Cleared') 
-        AND t.date_created <= DATE_SUB(NOW(), INTERVAL 30 DAY)
-      ORDER BY t.date_created ASC LIMIT 5
+        AND t.status NOT IN ('Paid', 'Cleared', 'Fully Paid', 'Completed')
     `);
 
-    // D. Blended Operational Activity Feed: Audit Logs + Maintenance Registers (FIXED SCHEMA COLUMNS)
+    // D. Operational Feed
     const activityPromise = db.query(`
-      (SELECT 
-        'audit' AS log_type, 
-        action_description AS description, 
-        employee_id AS operator, 
-        date_time AS log_date 
-       FROM audit_logs)
+      (SELECT 'audit' AS log_type, action_description AS description, employee_id AS operator, date_time AS log_date FROM audit_logs)
       UNION ALL
-      (SELECT 
-        'maintenance' AS log_type, 
-        description AS description, 
-        prepared_by AS operator, 
-        created_at AS log_date 
-       FROM maintenance_logs)
+      (SELECT 'maintenance' AS log_type, description AS description, prepared_by AS operator, created_at AS log_date FROM maintenance_logs)
       ORDER BY log_date DESC LIMIT 10
     `);
 
-    // E. Unified Operations Calendar: Interments + Maintenance schedules (FIXED SCHEMA COLUMNS)
-    const calendarPromise = db.query(`
-      SELECT 
-        'interment' AS type, 
-        date_of_interment AS date, 
-        CONCAT(first_name, ' ', last_name) AS title 
-      FROM interments 
-      WHERE is_deleted = 0 AND date_of_interment IS NOT NULL
-      UNION ALL
-      SELECT 
-        'maintenance' AS type, 
-        scheduled_date AS date, 
-        description AS title 
-      FROM maintenance_logs 
-      WHERE scheduled_date IS NOT NULL
+    // E. Calendar: Interments
+    const calendarIntermentsPromise = db.query(`
+      SELECT date_of_interment AS date, CONCAT(first_name, ' ', last_name) AS deceased_name 
+      FROM interments WHERE is_deleted = 0 AND date_of_interment IS NOT NULL
     `);
 
-    // Resolve query stack concurrently
     const [
       [inventoryRows],
-      [transactionRows],
-      [noticesRows],
+      [mixedTransactionsRows],
+      [activeTxnRows],
       [activityRows],
-      [calendarRows],
+      [intermentsRows],
     ] = await Promise.all([
       inventoryPromise,
-      transactionsPromise,
-      noticesPromise,
+      recentActivityPromise,
+      activeTransactionsPromise,
       activityPromise,
-      calendarPromise,
+      calendarIntermentsPromise,
     ]);
 
     let availableLots = 0;
@@ -104,22 +108,64 @@ router.get("/summary", async (req, res) => {
         occupiedLots = row.count;
     });
 
-    // Segment localized calendar matrices
-    const intermentsList = calendarRows.filter(
-      (item) => item.type === "interment",
-    );
-    const maintenanceList = calendarRows.filter(
-      (item) => item.type === "maintenance",
-    );
+    // --- DYNAMIC DUE DATE & OVERDUE LOGIC ---
+    const noticesRows = [];
+    const duesRows = [];
+    const today = new Date();
+
+    activeTxnRows.forEach((txn) => {
+      // 1. Use the exact due date stored in the database
+      let nextDueDate = txn.due_date
+        ? new Date(txn.due_date)
+        : new Date(txn.date_created);
+      if (!txn.due_date) {
+        nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+      }
+
+      // 2. Add to calendar (This ensures the dot stays there for the due date)
+      duesRows.push({
+        date: nextDueDate.toISOString().split("T")[0],
+        client_name: txn.client_name,
+      });
+
+      // 3. Overdue check: If they paid for the month, the DB updates the due_date to next month,
+      // making it > today, which automatically hides the overdue warning!
+      if (nextDueDate < today) {
+        const diffTime = Math.abs(today - nextDueDate);
+        const daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+        let monthsOverdue =
+          (today.getFullYear() - nextDueDate.getFullYear()) * 12;
+        monthsOverdue -= nextDueDate.getMonth();
+        monthsOverdue += today.getMonth();
+
+        // 1% Penalty per month overdue applied to remaining balance
+        let penalty = 0;
+        if (monthsOverdue > 0) {
+          penalty = parseFloat(txn.remaining_balance) * 0.01 * monthsOverdue;
+        }
+
+        noticesRows.push({
+          client_id: txn.client_id,
+          client_name: txn.client_name,
+          pr_number: txn.pr_number,
+          si_number: txn.si_number,
+          days_overdue: daysOverdue,
+          remaining_balance: parseFloat(txn.remaining_balance) + penalty,
+        });
+      }
+    });
+
+    noticesRows.sort((a, b) => b.days_overdue - a.days_overdue);
 
     res.json({
       inventory: { available: availableLots, occupied: occupiedLots },
-      recentTransactions: transactionRows,
-      overdueNotices: noticesRows,
+      recentTransactions: mixedTransactionsRows,
+      overdueNotices: noticesRows.slice(0, 5),
       recentActivity: activityRows,
       calendarEvents: {
-        interments: intermentsList,
-        maintenance: maintenanceList,
+        interments: intermentsRows,
+        due_dates: duesRows,
       },
     });
   } catch (error) {
@@ -130,7 +176,7 @@ router.get("/summary", async (req, res) => {
   }
 });
 
-// Inter-Connected Search Entry - AAYUSIN PA PO
+// Inter-Connected Search Entry
 router.get("/search-all", async (req, res) => {
   try {
     const { q } = req.query;
@@ -145,7 +191,8 @@ router.get("/search-all", async (req, res) => {
         CONCAT(c.first_name, ' ', c.last_name) AS name, 
         c.contact_number,
         'Client Base' AS match_type,
-        'Direct core identity registry match' AS context_details
+        'Direct core identity registry match' AS context_details,
+        CONCAT('/clients/', c.client_id) AS url
       FROM clients c
       WHERE c.is_deleted = 0 AND (c.first_name LIKE ? OR c.last_name LIKE ? OR c.contact_number LIKE ?)
       
@@ -153,22 +200,24 @@ router.get("/search-all", async (req, res) => {
       
       SELECT DISTINCT 
         c.client_id, 
-        CONCAT(c.first_name, ' ', c.last_name) AS name, 
+        CONCAT( t.professional_receipt, ' | ', t.sales_invoice) AS name, 
         c.contact_number,
-        'Active Ledger' AS match_type,
-        CONCAT('Linked via historical invoice balance status: ', t.status) AS context_details
+        'Transaction Ledger' AS match_type,
+        CONCAT('Linked via invoice. Balance: ₱', t.remaining_balance) AS context_details,
+        CONCAT('/clients/', c.client_id) AS url
       FROM transactions t
       JOIN clients c ON t.client_id = c.client_id
-      WHERE t.is_deleted = 0 AND c.is_deleted = 0 AND (t.status LIKE ?)
+      WHERE t.is_deleted = 0 AND c.is_deleted = 0 AND (t.professional_receipt LIKE ? OR t.sales_invoice LIKE ? OR t.transaction_id LIKE ?)
 
       UNION
 
       SELECT DISTINCT 
         c.client_id, 
-        CONCAT(c.first_name, ' ', c.last_name) AS name, 
+        CONCAT(i.first_name, ' ', i.last_name) AS name, 
         c.contact_number,
         'Historical Interment' AS match_type,
-        CONCAT('Linked family relative deceased record: ', i.first_name, ' ', i.last_name) AS context_details
+        CONCAT('Family relative/contact: ', c.first_name, ' ', c.last_name) AS context_details,
+        CONCAT('/clients/', c.client_id) AS url
       FROM interments i
       JOIN transactions t ON i.transaction_id = t.transaction_id
       JOIN clients c ON t.client_id = c.client_id
@@ -176,6 +225,8 @@ router.get("/search-all", async (req, res) => {
       LIMIT 8
     `,
       [
+        wildcardPattern,
+        wildcardPattern,
         wildcardPattern,
         wildcardPattern,
         wildcardPattern,

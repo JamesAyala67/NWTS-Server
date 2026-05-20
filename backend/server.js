@@ -17,6 +17,7 @@ const plotRoutes = require("./routes/plotsRoutes");
 const intermentRoutes = require("./routes/intermentsRoutes");
 const employeeRoutes = require("./routes/employeeRoutes");
 const requestRoutes = require("./routes/requestRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 
 app.use(
   cors({
@@ -51,6 +52,8 @@ app.use("/api/employees", employeeRoutes);
 app.use("/api/requests", requestRoutes);
 
 app.use("/api/audit-logs", auditRoutes);
+
+app.use("/api/reports", reportRoutes);
 
 // (Para sa Postman)
 app.get("/api/test", (req, res) => {

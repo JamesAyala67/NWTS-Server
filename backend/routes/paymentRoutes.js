@@ -43,10 +43,13 @@ router.post("/", async (req, res) => {
       ],
     );
 
-    // Update the transaction's remaining balance
+    // Update the transaction's remaining balance AND advance the due date by 1 month
     await connection.query(
-      "UPDATE transactions SET remaining_balance = remaining_balance - ? WHERE transaction_id = ?",
-      [amount_paid, transaction_id],
+      `UPDATE transactions 
+       SET remaining_balance = remaining_balance - ?, 
+           due_date = DATE_ADD(COALESCE(due_date, date_created), INTERVAL 1 MONTH) 
+       WHERE transaction_id = ?`,
+      [amount_paid, transaction_id]
     );
 
     // Check the new remaining balance
@@ -75,11 +78,14 @@ router.post("/", async (req, res) => {
         " Transaction is now fully paid. Plot status updated to Occupied.";
     }
 
+    // Dynamic description identifying the specific logged-in system executor vs selected field agent
+    const systemLoggerNote = ` Prepared by/Assisting staff: ${recorded_by}.`;
+
     // Execute Audit Log safely within the SQL transaction
     await logAudit(
       activeEmployee,
       "ADD PAYMENT",
-      `Recorded a payment of ₱${Number(amount_paid).toLocaleString()} for ${professional_receipt}, ${sales_invoice} via ${payment_method}.${completionNote}`,
+      `Recorded a payment of ₱${Number(amount_paid).toLocaleString()} for ${professional_receipt}, ${sales_invoice} via ${payment_method}.${systemLoggerNote}${completionNote}`,
       transaction_id,
       connection,
     );

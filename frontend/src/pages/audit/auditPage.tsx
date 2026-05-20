@@ -331,10 +331,6 @@ export default function AuditLogs() {
             </select>
             <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-
-          <button className="bg-white border border-slate-200 text-sm px-3 py-2 rounded-lg font-medium text-slate-600 flex items-center gap-2 shadow-sm hover:bg-slate-50">
-            <Download className="w-4 h-4" /> Export
-          </button>
         </div>
       </div>
 

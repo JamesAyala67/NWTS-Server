@@ -42,14 +42,14 @@ export default function Sidebar({
       adminOnly: false,
     },
     { name: "Clients", path: "/clients", icon: Users, adminOnly: false },
-    { name: "Plot Map", path: "/plots", icon: Map, adminOnly: false },
+    { name: "Plot", path: "/plots", icon: Map, adminOnly: false },
     { name: "Request", path: "/request", icon: ClipboardList, adminOnly: true },
     { name: "Logs", path: "/logs", icon: Clock, adminOnly: true },
     { name: "Account", path: "/account", icon: UserIcon, adminOnly: true },
   ];
 
   return (
-    <aside className="w-64 bg-[#4A5D4E] text-white flex-col justify-between hidden md:flex shadow-xl min-h-screen">
+    <aside className="w-64 bg-[#4A5D4E] text-white flex flex-col justify-between shadow-xl h-full min-h-screen">
       <div>
         {/* Header Area */}
         <div className="p-6 pt-8 flex items-center gap-3 border-b border-[#5a6e5e]">

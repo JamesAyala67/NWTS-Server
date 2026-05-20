@@ -231,6 +231,24 @@ export default function AddTransaction({
     mutationFn: async () => {
       const employeeId = localStorage.getItem("employee_id") || "";
 
+      // --- DOUBLE BOOKING GUARD (client-side pre-check) ---
+      // Re-fetch plots right before submitting. If the user had the form open
+      // while someone else booked the same plot, we catch it here immediately
+      // without waiting for a server round trip.
+      const freshPlotsRes = await api.get(`${API_BASE_URL}/plots`);
+      const freshPlots: any[] = freshPlotsRes.data;
+      const targetPlot = freshPlots.find(
+        (p: any) => p.plot_id === formData.plot_id,
+      );
+      if (!targetPlot || targetPlot.status !== "Available") {
+        const err: any = new Error(
+          `Plot ${formData.plot_id} is no longer available. Please select a different plot.`,
+        );
+        err.isConflict = true;
+        throw err;
+      }
+      // --- END DOUBLE BOOKING GUARD ---
+
       // Step 1: Submit transaction object
       const transactionPayload = {
         ...formData,
@@ -281,9 +299,31 @@ export default function AddTransaction({
 
       if (onSuccess) onSuccess(data);
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error(error);
-      alert("Failed to successfully sync transaction records or file arrays.");
+      // Surface double-booking conflicts with a clear, specific message
+      const isConflict = error?.isConflict || error?.response?.status === 409;
+      if (isConflict) {
+        const msg =
+          error?.response?.data?.error ||
+          error?.message ||
+          "This plot was just booked by someone else.";
+        alert(
+          `⚠️ Plot No Longer Available\n\n${msg}\n\nPlease select a different plot.`,
+        );
+        // Refresh the plot list so the dropdown reflects the current state
+        queryClient.invalidateQueries({ queryKey: ["plots", "available"] });
+        setFormData((prev) => ({
+          ...prev,
+          plot_id: "",
+          plot_type: "",
+          contract_price: 0,
+        }));
+      } else {
+        alert(
+          "Failed to successfully sync transaction records or file arrays.",
+        );
+      }
     },
   });
 

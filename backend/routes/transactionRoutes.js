@@ -7,6 +7,16 @@ const logAudit = require("../utils/auditLogger");
 router.post("/", async (req, res) => {
   const connection = await db.getConnection();
 
+  const transactionDate = req.body.transaction_date
+    ? new Date(req.body.transaction_date)
+    : new Date();
+
+  const dueDate = new Date(transactionDate);
+  dueDate.setMonth(dueDate.getMonth() + 1);
+
+  // Format the date for MySQL (YYYY-MM-DD)
+  const formattedDueDate = dueDate.toISOString().split("T")[0];
+
   try {
     const {
       client_id,
@@ -30,7 +40,28 @@ router.post("/", async (req, res) => {
 
     await connection.beginTransaction();
 
-    // Actually fetch the last transaction ID from the database
+    // --- DOUBLE BOOKING GUARD ---
+    // Lock the plot row for the duration of this transaction.
+    // Any concurrent request trying to book the same plot will block here
+    // until this transaction commits or rolls back, preventing race conditions.
+    const [plotRows] = await connection.query(
+      "SELECT status FROM plots WHERE plot_id = ? FOR UPDATE",
+      [plot_id],
+    );
+
+    if (plotRows.length === 0) {
+      throw new Error("Plot not found.");
+    }
+
+    if (plotRows[0].status !== "Available") {
+      const err = new Error(
+        `Plot ${plot_id} is no longer available (status: ${plotRows[0].status}). Please select a different plot.`,
+      );
+      err.statusCode = 409;
+      throw err;
+    }
+    // --- END DOUBLE BOOKING GUARD ---
+
     const [lastTxn] = await connection.query(
       "SELECT transaction_id FROM transactions ORDER BY transaction_id DESC LIMIT 1",
     );
@@ -44,13 +75,13 @@ router.post("/", async (req, res) => {
     // Insert new transaction record
     await connection.query(
       `INSERT INTO transactions 
-      (transaction_id, client_id, professional_receipt, sales_invoice, plot_id, plot_type, plot_size, plot_price, downpayment, monthlypayment, remaining_balance, status, years_to_pay, remarks, prepared_by) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (transaction_id, client_id, professional_receipt, sales_invoice, plot_id, plot_type, plot_size, plot_price, downpayment, monthlypayment, remaining_balance, status, years_to_pay, remarks, prepared_by, due_date) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         transaction_id,
         client_id,
-        professional_receipt,
-        sales_invoice,
+        professional_receipt || "",
+        sales_invoice || "",
         plot_id,
         plot_type,
         plot_size,
@@ -58,14 +89,14 @@ router.post("/", async (req, res) => {
         downpayment,
         monthlypayment,
         remaining_balance,
-        status,
-        years_to_pay,
-        remarks,
+        status || "Pending",
+        years_to_pay || 0,
+        remarks || "",
         prepared_by,
+        formattedDueDate,
       ],
     );
 
-    // Added the missing [client_id] parameter
     const [clients] = await connection.query(
       "SELECT * FROM clients WHERE is_deleted = FALSE AND client_id = ?",
       [client_id],
@@ -81,7 +112,6 @@ router.post("/", async (req, res) => {
       [plot_id],
     );
 
-    // Properly extracted names from the database result, not the string ID
     const client = clients[0];
     const middleInitial = client.middle_name
       ? `${client.middle_name.charAt(0)}.`
@@ -107,8 +137,9 @@ router.post("/", async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error(error);
+    const statusCode = error.statusCode || 500;
     res
-      .status(500)
+      .status(statusCode)
       .json({ error: error.message || "Failed to save transaction" });
   } finally {
     connection.release();
