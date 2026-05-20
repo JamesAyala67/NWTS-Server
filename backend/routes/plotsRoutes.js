@@ -232,12 +232,7 @@ router.put("/maps/:plot_id/edit", async (req, res) => {
     const { plot_id } = req.params;
     const { plot_type, price, status, employee_id } = req.body;
 
-    const allowedStatuses = [
-      "Available",
-      "Occupied",
-      "Reserved",
-      "Maintenance",
-    ];
+    const allowedStatuses = ["Available", "Occupied", "Reserved"];
     if (status && !allowedStatuses.includes(status)) {
       return res.status(400).json({ error: "Invalid status provided." });
     }

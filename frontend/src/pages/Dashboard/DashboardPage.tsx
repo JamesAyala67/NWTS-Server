@@ -1,6 +1,6 @@
 // DashboardPage.tsx
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import {
@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import MegaForm from "@/components/forms/MegaForm";
 import AddClientSheet from "../../components/forms/AddClientSheet";
+import { useAddress } from "../../hooks/useAddress";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
@@ -68,17 +69,19 @@ export default function Dashboard() {
   });
   const [isSubmittingClient, setIsSubmittingClient] = useState(false);
 
+  const queryClient = useQueryClient();
+
   // PSGC Location States
-  const [provinces, setProvinces] = useState<{ code: string; name: string }[]>(
-    [],
+  const [selectedProvince, setSelectedProvince] = useState<string>("");
+  const [selectedCity, setSelectedCity] = useState<string>("");
+  const [selectedBarangay, setSelectedBarangay] = useState<string>("");
+
+  // Custom address hook handles all fetching and structural states automatically
+  const { provinces, cities, barangays } = useAddress(
+    selectedProvince,
+    selectedCity,
+    selectedBarangay,
   );
-  const [cities, setCities] = useState<{ code: string; name: string }[]>([]);
-  const [barangays, setBarangays] = useState<{ code: string; name: string }[]>(
-    [],
-  );
-  const [selectedProvince, setSelectedProvince] = useState("");
-  const [selectedCity, setSelectedCity] = useState("");
-  const [selectedBarangay, setSelectedBarangay] = useState("");
 
   // Employees State
   const [employees, setEmployees] = useState<any[]>([]);
@@ -93,62 +96,7 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch provinces on mount
-  useEffect(() => {
-    fetch("https://psgc.gitlab.io/api/provinces/")
-      .then((r) => r.json())
-      .then((data) =>
-        setProvinces(
-          data
-            .map((p: any) => ({ code: p.code, name: p.name }))
-            .sort((a: any, b: any) => a.name.localeCompare(b.name)),
-        ),
-      )
-      .catch(console.error);
-  }, []);
-
-  // Fetch cities when province changes
-  useEffect(() => {
-    if (!selectedProvince) {
-      setCities([]);
-      setBarangays([]);
-      return;
-    }
-    fetch(
-      `https://psgc.gitlab.io/api/provinces/${selectedProvince}/cities-municipalities/`,
-    )
-      .then((r) => r.json())
-      .then((data) =>
-        setCities(
-          data
-            .map((c: any) => ({ code: c.code, name: c.name }))
-            .sort((a: any, b: any) => a.name.localeCompare(b.name)),
-        ),
-      )
-      .catch(console.error);
-  }, [selectedProvince]);
-
-  // Fetch barangays when city changes
-  useEffect(() => {
-    if (!selectedCity) {
-      setBarangays([]);
-      return;
-    }
-    fetch(
-      `https://psgc.gitlab.io/api/cities-municipalities/${selectedCity}/barangays/`,
-    )
-      .then((r) => r.json())
-      .then((data) =>
-        setBarangays(
-          data
-            .map((b: any) => ({ code: b.code, name: b.name }))
-            .sort((a: any, b: any) => a.name.localeCompare(b.name)),
-        ),
-      )
-      .catch(console.error);
-  }, [selectedCity]);
-
-  // Fetch employees for "Prepared By" dropdown
+  // Fetch employees list for form assignment
   useEffect(() => {
     api
       .get("/employees")
@@ -187,7 +135,6 @@ export default function Dashboard() {
     enabled: searchQuery.trim().length > 0,
   });
 
-  // Excel Multi sheet Generator
   const handleExportExcelReport = async () => {
     try {
       const response = await api.get("/reports/export-excel", {
@@ -209,13 +156,43 @@ export default function Dashboard() {
     }
   };
 
-  // Add Client Handler
+  // Add Client Handler matches the ClientPage submission logic
   const handleAddClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingClient(true);
+
     try {
-      await api.post("/clients", clientForm);
+      const employeeId = localStorage.getItem("employee_id") || "EMP-001";
+      const currentYear = new Date().getFullYear().toString().slice(-2);
+      const randomNumbers = Math.floor(10000 + Math.random() * 90000);
+      const generatedClientId = `${currentYear}-${randomNumbers}`;
+
+      // Convert location selection codes to display text strings before transmitting
+      const selectedProvName =
+        provinces?.find((p: any) => p.code === selectedProvince)?.name || "";
+      const selectedCityName =
+        cities?.find((c: any) => c.code === selectedCity)?.name || "";
+      const selectedBrgyName =
+        barangays?.find((b: any) => b.code === selectedBarangay)?.name || "";
+
+      const payload = {
+        client_id: generatedClientId,
+        ...clientForm,
+        province: selectedProvName,
+        city: selectedCityName,
+        barangay: selectedBrgyName,
+        created_at: new Date().toISOString(),
+        employee_id: employeeId,
+      };
+
+      await api.post("/clients", payload);
+
+      // Instantly refresh analytics information
+      queryClient.invalidateQueries({ queryKey: ["dashboardSummary"] });
+
       alert("Client profile registered successfully!");
+
+      // Clear input fields and location states
       setIsAddClientOpen(false);
       setClientForm({
         first_name: "",

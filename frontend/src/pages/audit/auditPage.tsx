@@ -4,7 +4,6 @@ import { format } from "date-fns";
 import {
   Search,
   Filter,
-  Download,
   Trash2,
   UserCheck,
   Upload,
@@ -194,8 +193,7 @@ export default function AuditLogs() {
             Operations Center
           </h1>
           <p className="text-sm text-slate-500">
-            Track system activity, maintenance records, and recover deleted
-            data.
+            Track system activity, and recover deleted data.
           </p>
         </div>
 
@@ -225,9 +223,6 @@ export default function AuditLogs() {
           </p>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Maintenance Pending
-          </p>
           <p className="text-2xl font-bold text-slate-800 mt-1">
             {stats.pendingMaint}
           </p>
@@ -267,12 +262,7 @@ export default function AuditLogs() {
 
       {/* Navigation Menu Tabs */}
       <div className="border-b border-slate-200 mb-5 flex gap-6">
-        {[
-          "Activity Logs",
-          "Maintenance Logs",
-          "Deleted Records",
-          "System Events",
-        ].map((tab) => (
+        {["Activity Logs", "Deleted Records", "System Events"].map((tab) => (
           <button
             key={tab}
             onClick={() => {

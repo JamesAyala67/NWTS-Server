@@ -5,9 +5,6 @@ import axios from "axios";
 import { ArrowLeft, User, FileText, Trash2, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 
-// Modal Components
-import MaintenanceModal from "../../components/modal/MaintenanceModal";
-
 // Custom UI
 import TransactionHistoryTable from "@/components/custom/client/TransactionHistoryTable";
 import ClientDashboardDrawer from "@/components/custom/client/ClientDashboardDrawer";
@@ -37,7 +34,6 @@ export default function ClientDashboard() {
   // Modal and Drawer
   const [selectedTransactionForAction, setSelectedTransactionForAction] =
     useState<any>(null);
-  const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
   const [isPrModalOpen, setIsPrModalOpen] = useState(false);
   const [selectedTransactionForPr, setSelectedTransactionForPr] =
     useState<any>(null);
@@ -134,14 +130,12 @@ export default function ClientDashboard() {
   });
 
   const handleTransactionAction = (
-    action: "payment" | "interment" | "maintenance",
+    action: "payment" | "interment",
     txn: any,
   ) => {
     setSelectedTransactionForAction(txn);
     if (action === "payment" || action === "interment") {
       setActiveDrawer(action);
-    } else if (action === "maintenance") {
-      setIsMaintenanceModalOpen(true);
     }
   };
 
@@ -491,19 +485,6 @@ export default function ClientDashboard() {
         availableContactTxns={availableContactTxns}
         selectedTransaction={selectedTransactionForAction}
         onSuccess={closeDrawerAndRefresh}
-      />
-
-      <MaintenanceModal
-        isOpen={isMaintenanceModalOpen}
-        onClose={() => {
-          setIsMaintenanceModalOpen(false);
-          setSelectedTransactionForAction(null);
-        }}
-        transaction={selectedTransactionForAction}
-        onSuccess={() => {
-          toast.success("Maintenance scheduled!");
-          queryClient.invalidateQueries({ queryKey: ["client", id] });
-        }}
       />
     </div>
   );

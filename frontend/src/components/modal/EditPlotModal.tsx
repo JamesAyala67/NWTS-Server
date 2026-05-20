@@ -146,7 +146,6 @@ export default function EditPlotModal({
               <option value="Available">Available</option>
               <option value="Occupied">Occupied</option>
               <option value="Reserved">Reserved</option>
-              <option value="Maintenance">Maintenance</option>
             </select>
           </div>
         </div>

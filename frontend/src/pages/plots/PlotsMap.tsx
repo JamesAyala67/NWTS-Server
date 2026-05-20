@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Map as MapIcon,
-  BarChart3,
   Info,
   CheckCircle2,
   X,
@@ -59,7 +58,7 @@ export interface Plot {
   block: string;
   lot: string;
   plot_type: string;
-  status: "Available" | "Occupied" | "Reserved" | "Maintenance";
+  status: "Available" | "Occupied" | "Reserved";
   price: number;
   owner_name?: string;
   owner_contact?: string;
@@ -138,7 +137,6 @@ export default function PlotMap() {
       available: plots.filter((p) => p.status === "Available").length,
       occupied: plots.filter((p) => p.status === "Occupied").length,
       reserved: plots.filter((p) => p.status === "Reserved").length,
-      maintenance: plots.filter((p) => p.status === "Maintenance").length,
     }),
     [plots],
   );
@@ -183,8 +181,6 @@ export default function PlotMap() {
         return "bg-[#d9d9d9] border-[#c0c0c0]";
       case "Reserved":
         return "bg-[#fde9cc] border-[#f9d5a7]";
-      case "Maintenance":
-        return "bg-[#fcd5d9] border-[#f9b2b9]";
       default:
         return "bg-white border-gray-200";
     }
@@ -405,12 +401,6 @@ export default function PlotMap() {
                   value={stats.reserved}
                   color="text-orange-500"
                   icon={<Info size={16} />}
-                />
-                <StatCard
-                  label="Maintenance"
-                  value={stats.maintenance}
-                  color="text-red-500"
-                  icon={<BarChart3 size={16} />}
                 />
               </div>
             </div>

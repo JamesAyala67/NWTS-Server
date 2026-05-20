@@ -71,12 +71,9 @@ router.get("/summary", async (req, res) => {
     `);
 
     // D. Operational Feed
-    const activityPromise = db.query(`
-      (SELECT 'audit' AS log_type, action_description AS description, employee_id AS operator, date_time AS log_date FROM audit_logs)
-      UNION ALL
-      (SELECT 'maintenance' AS log_type, description AS description, prepared_by AS operator, created_at AS log_date FROM maintenance_logs)
-      ORDER BY log_date DESC LIMIT 10
-    `);
+    const activityPromise = db.query(
+      `SELECT 'audit' AS log_type, action_description AS description, employee_id AS operator, date_time AS log_date FROM audit_logs`,
+    );
 
     // E. Calendar: Interments
     const calendarIntermentsPromise = db.query(`
