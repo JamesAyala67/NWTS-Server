@@ -6,7 +6,6 @@ import AddContactPerson from "../../forms/AddContactPerson";
 import AddClientFile from "../../forms/AddClientFiles";
 import AddPayment from "../../forms/AddPayment";
 import ScheduleInterment from "../../forms/ScheduleInterment";
-import AddMiscellaneous from "../../forms/AddMiscellanous";
 
 export type DrawerAction =
   | "transaction"
