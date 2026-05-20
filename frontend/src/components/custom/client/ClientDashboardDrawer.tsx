@@ -6,6 +6,7 @@ import AddContactPerson from "../../forms/AddContactPerson";
 import AddClientFile from "../../forms/AddClientFiles";
 import AddPayment from "../../forms/AddPayment";
 import ScheduleInterment from "../../forms/ScheduleInterment";
+import AddMiscellaneous from "../../forms/AddMiscellanous";
 
 export type DrawerAction =
   | "transaction"
@@ -14,6 +15,7 @@ export type DrawerAction =
   | "payment"
   | "interment"
   | "file"
+  | "miscellaneous"
   | null;
 
 interface ClientActionDrawerProps {
@@ -37,9 +39,9 @@ export default function ClientActionDrawer({
   selectedTransaction,
   onSuccess,
 }: ClientActionDrawerProps) {
-  // Local state to handle the dropdown selection inside the drawer
+  // 1. ADDED "miscellaneous" TO THE ALLOWED STATE TYPES
   const [transactionType, setTransactionType] = useState<
-    "plot" | "general" | ""
+    "plot" | "general" | "miscellaneous" | ""
   >("");
 
   // Reset the dropdown selection whenever the drawer closes
@@ -69,12 +71,17 @@ export default function ClientActionDrawer({
             {activeDrawer === "transaction" &&
               transactionType === "general" &&
               "General Transaction"}
+            {/* 2. HANDLE HEADER TITLE WHEN SELECTED FROM DROPDOWN */}
+            {activeDrawer === "transaction" &&
+              transactionType === "miscellaneous" &&
+              "Miscellaneous Transaction"}
+
             {activeDrawer === "copurchaser" && "Add Co-Purchaser"}
             {activeDrawer === "contact" && "Add Contact Person"}
             {activeDrawer === "file" && "Register Document"}
-            {/* Keeping this just in case you trigger payment from somewhere else later */}
             {activeDrawer === "payment" && "Record Payment"}
             {activeDrawer === "interment" && "Schedule Interment"}
+            {activeDrawer === "miscellaneous" && "Add Miscellaneous Entry"}
           </h2>
           <button
             onClick={onClose}
@@ -103,7 +110,17 @@ export default function ClientActionDrawer({
                 <option value="general">
                   General Transaction (Add Payment)
                 </option>
+                <option value="miscellaneous">Miscellaneous Transaction</option>
               </select>
+            </div>
+          )}
+
+          {/* 3. ALLOW MOUNTING EITHER FROM DIRECT ACTION OR FROM THE DROPDOWN */}
+          {(activeDrawer === "miscellaneous" ||
+            (activeDrawer === "transaction" &&
+              transactionType === "miscellaneous")) && (
+            <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <AddMiscellaneous clientId={clientId} onSuccess={onSuccess} />
             </div>
           )}
 
@@ -117,9 +134,6 @@ export default function ClientActionDrawer({
           {/* Render AddPayment if General is selected */}
           {activeDrawer === "transaction" && transactionType === "general" && (
             <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              {/* NOTE: Since this is a new general payment not triggered from a specific row, 
-                  you will likely need to adjust AddPayment.tsx to let the user pick which 
-                  plot/transaction they are paying for. I passed clientData.transactions down just in case! */}
               <AddPayment
                 clientId={clientId}
                 clientTransactions={clientData?.transactions || []}

@@ -3,8 +3,8 @@ import axios from "axios";
 import { User, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
 
 // Lalaag ko kuta mukha ni Lowell
-import LoginBG from "../../assets/login-bg.png";
-// import LoginBG from "../../assets/login-1.jpg";
+// import LoginBG from "../../assets/login-bg.png";
+import LoginBG from "../../assets/login-1.jpg";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";

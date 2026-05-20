@@ -292,7 +292,9 @@ export default function AddTransaction({
       return txResponse.data;
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["plots", "available"] });
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["plots"] }); // Refreshes available plots list
       alert("Transaction records and dropped attachments saved successfully!");
       setFormData(defaultFormData);
       setSelectedFiles([]);
