@@ -1,30 +1,46 @@
-// This component allows users to add a contact person
-// associated with a specific transaction for a client,
-// it uses React state to manage form data,
-// React Query for handling the mutation to add the contact person
-// and Sonner for displaying success or error messages
-// the form includes fields for selecting an associated transaction
-// entering the contact persons details then upon successful submission,
-// the form resets and the client data is refetched to reflect the new contact person
-
-// Summarize ta hugak na ko mag para comment
-
-import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 interface Props {
   clientId: string;
   transactions: any[];
+  onSuccess?: () => void;
 }
 
-export default function AddContactPerson({ clientId, transactions }: Props) {
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
+
+const RELATIONSHIP_OPTIONS = [
+  "Spouse",
+  "Child",
+  "Parent",
+  "Sibling",
+  "Grandchild",
+  "Relative",
+  "Legal Representative",
+  "Friend / Associate",
+  "Other",
+];
+
+export default function AddContactPerson({
+  clientId,
+  transactions,
+  onSuccess,
+}: Props) {
   const queryClient = useQueryClient();
-  const [employees, setEmployees] = useState<any[]>([]); // Dynamic employee state
 
   const [formData, setFormData] = useState({
     transaction_id: "",
@@ -33,32 +49,76 @@ export default function AddContactPerson({ clientId, transactions }: Props) {
     middle_name: "",
     relation: "",
     contact_number: "",
-    prepared_by: "", // Handled by employee selection dropdown
+    prepared_by: "",
   });
 
-  // Fetch active employees to populate selection options
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        const res = await axios.get("http://localhost:3000/api/employees");
-        setEmployees(res.data);
-      } catch (error) {
-        console.error("Failed to fetch employees", error);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Fetch Employees
+  const { data: employees = [], isLoading: isLoadingEmployees } = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
+      const res = await api.get("/employees");
+      return res.data;
+    },
+    staleTime: 1000 * 60 * 10,
+  });
+
+  // Intelligent +63 PH Format Mask Handler
+  const handleContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let inputVal = e.target.value;
+
+    if (!inputVal) {
+      setFormData((prev) => ({ ...prev, contact_number: "" }));
+      return;
+    }
+
+    let cleaned = inputVal.replace(/[^\d+]/g, "");
+
+    if (!cleaned.startsWith("+63")) {
+      const digits = cleaned.replace(/\D/g, "");
+      if (digits.startsWith("63")) {
+        cleaned = "+" + digits;
+      } else if (digits.startsWith("0")) {
+        cleaned = "+63" + digits.substring(1);
+      } else if (digits.length > 0) {
+        cleaned = "+63" + digits;
       }
-    };
-    fetchEmployees();
-  }, []);
+    }
+
+    if (cleaned.length > 13) {
+      cleaned = cleaned.substring(0, 13);
+    }
+
+    setFormData((prev) => ({ ...prev, contact_number: cleaned }));
+
+    if (cleaned.length >= 4 && cleaned[3] !== "9") {
+      setErrors((prev) => ({
+        ...prev,
+        contact_number: "Philippine mobile numbers must start with +639",
+      }));
+    } else if (cleaned.length > 0 && cleaned.length < 13) {
+      setErrors((prev) => ({
+        ...prev,
+        contact_number: "Number must be exactly 13 characters (+639XXXXXXXXX)",
+      }));
+    } else {
+      setErrors((prev) => {
+        const copy = { ...prev };
+        delete copy.contact_number;
+        return copy;
+      });
+    }
+  };
 
   const mutation = useMutation({
     mutationFn: (newData: any) => {
-      return axios.post(
-        `http://localhost:3000/api/contacts/${clientId}/contact-persons`,
-        newData,
-      );
+      return api.post(`/contacts/${clientId}/contact-persons`, newData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["client", clientId] });
-      toast.success("Contact person added!");
+      toast.success("Contact person added successfully!");
+
       setFormData({
         transaction_id: "",
         first_name: "",
@@ -68,152 +128,266 @@ export default function AddContactPerson({ clientId, transactions }: Props) {
         contact_number: "",
         prepared_by: "",
       });
+      setErrors({});
+      if (onSuccess) onSuccess();
     },
-    onError: () => toast.error("Failed to add contact person."),
+    onError: () => toast.error("Failed to add emergency contact person."),
   });
+
+  // Strict Validation Module
+  const validateForm = () => {
+    const currentErrors: Record<string, string> = {};
+
+    if (!formData.transaction_id)
+      currentErrors.transaction_id = "Please pick an associated plot record.";
+    if (!formData.first_name.trim())
+      currentErrors.first_name = "First name is required.";
+    if (!formData.last_name.trim())
+      currentErrors.last_name = "Last name is required.";
+    if (!formData.middle_name.trim())
+      currentErrors.middle_name = "Middle name is required.";
+    if (!formData.relation)
+      currentErrors.relation = "Please identify the relationship tier.";
+    if (!formData.prepared_by)
+      currentErrors.prepared_by = "Please map the encoder profile.";
+
+    if (!formData.contact_number) {
+      currentErrors.contact_number = "Contact information is mandatory.";
+    } else if (
+      !formData.contact_number.startsWith("+639") ||
+      formData.contact_number.length !== 13
+    ) {
+      currentErrors.contact_number =
+        "Must be a valid 13-digit PH number starting with +639.";
+    }
+
+    setErrors(currentErrors);
+    return Object.keys(currentErrors).length === 0;
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.transaction_id)
-      return toast.error("Please select a transaction");
-    if (!formData.prepared_by)
-      return toast.error("Please select the assisting employee");
 
-    // Capture the active system encoder for administrative audit tracking
+    if (!validateForm()) {
+      toast.error("Please fill out all missing structural fields.");
+      return;
+    }
+
     const employeeId = localStorage.getItem("employee_id") || null;
 
     mutation.mutate({
       ...formData,
-      employee_id: employeeId, // Appends security token to transaction log context
+      employee_id: employeeId,
     });
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="flex flex-col gap-2">
+      {/* Transaction Mapping */}
+      <div className="flex flex-col gap-1.5">
         <Label className="text-sm font-semibold text-gray-700">
-          Associated Transaction
+          Associated Plot Transaction *
         </Label>
         <select
-          className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a] text-gray-800"
+          className={`flex h-10 w-full rounded-md border bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a] text-gray-800 ${
+            errors.transaction_id
+              ? "border-red-500 focus:ring-red-500"
+              : "border-gray-300"
+          }`}
           value={formData.transaction_id}
-          onChange={(e) =>
-            setFormData({ ...formData, transaction_id: e.target.value })
-          }
-          required
+          onChange={(e) => {
+            setFormData({ ...formData, transaction_id: e.target.value });
+            if (errors.transaction_id)
+              setErrors((p) => ({ ...p, transaction_id: "" }));
+          }}
         >
-          <option value="">-- Select Transaction --</option>
-          {transactions
-            ?.filter((txn) => txn.status === "Completed")
-            .map((txn) => (
-              <option key={txn.transaction_id} value={txn.transaction_id}>
-                {txn.plot_id} ({txn.transaction_id.substring(0, 8)})
+          <option value="">-- Select Plot / Reference Code --</option>
+          {transactions.map((txn) => (
+            <option key={txn.transaction_id} value={txn.transaction_id}>
+              Plot: {txn.plot_id || "Unassigned"} (
+              {txn.transaction_id.substring(0, 8).toUpperCase()})
+            </option>
+          ))}
+        </select>
+        {errors.transaction_id && (
+          <p className="text-xs text-red-500 font-medium">
+            {errors.transaction_id}
+          </p>
+        )}
+      </div>
+
+      {/* Core Names */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-sm font-semibold text-gray-700">
+            First Name *
+          </Label>
+          <Input
+            className={`bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a] ${errors.first_name && "border-red-500 focus-visible:ring-red-500"}`}
+            value={formData.first_name}
+            onChange={(e) => {
+              setFormData({ ...formData, first_name: e.target.value });
+              if (errors.first_name)
+                setErrors((p) => ({ ...p, first_name: "" }));
+            }}
+          />
+          {errors.first_name && (
+            <p className="text-xs text-red-500 font-medium">
+              {errors.first_name}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-sm font-semibold text-gray-700">
+            Last Name *
+          </Label>
+          <Input
+            className={`bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a] ${errors.last_name && "border-red-500 focus-visible:ring-red-500"}`}
+            value={formData.last_name}
+            onChange={(e) => {
+              setFormData({ ...formData, last_name: e.target.value });
+              if (errors.last_name) setErrors((p) => ({ ...p, last_name: "" }));
+            }}
+          />
+          {errors.last_name && (
+            <p className="text-xs text-red-500 font-medium">
+              {errors.last_name}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Sub Fields Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-sm font-semibold text-gray-700">
+            Middle Name *
+          </Label>
+          <Input
+            className={`bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a] ${errors.middle_name && "border-red-500 focus-visible:ring-red-500"}`}
+            value={formData.middle_name}
+            onChange={(e) => {
+              setFormData({ ...formData, middle_name: e.target.value });
+              if (errors.middle_name)
+                setErrors((p) => ({ ...p, middle_name: "" }));
+            }}
+          />
+          {errors.middle_name && (
+            <p className="text-xs text-red-500 font-medium">
+              {errors.middle_name}
+            </p>
+          )}
+        </div>
+
+        {/* Relationship Dropdown */}
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-sm font-semibold text-gray-700">
+            Relationship *
+          </Label>
+          <select
+            className={`flex h-10 w-full rounded-md border bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a] text-gray-800 ${
+              errors.relation
+                ? "border-red-500 focus:ring-red-500"
+                : "border-gray-300"
+            }`}
+            value={formData.relation}
+            onChange={(e) => {
+              setFormData({ ...formData, relation: e.target.value });
+              if (errors.relation) setErrors((p) => ({ ...p, relation: "" }));
+            }}
+          >
+            <option value="">-- Select --</option>
+            {RELATIONSHIP_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
               </option>
             ))}
-        </select>
-      </div>
+          </select>
+          {errors.relation && (
+            <p className="text-xs text-red-500 font-medium">
+              {errors.relation}
+            </p>
+          )}
+        </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-2">
+        {/* Formatted Phone Input */}
+        <div className="flex flex-col gap-1.5">
           <Label className="text-sm font-semibold text-gray-700">
-            First Name
+            Contact # *
           </Label>
-          <Input
-            className="bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a]"
-            value={formData.first_name}
-            onChange={(e) =>
-              setFormData({ ...formData, first_name: e.target.value })
-            }
-            required
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label className="text-sm font-semibold text-gray-700">
-            Last Name
-          </Label>
-          <Input
-            className="bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a]"
-            value={formData.last_name}
-            onChange={(e) =>
-              setFormData({ ...formData, last_name: e.target.value })
-            }
-            required
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="flex flex-col gap-2">
-          <Label className="text-sm font-semibold text-gray-700">
-            Middle Name
-          </Label>
-          <Input
-            className="bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a]"
-            value={formData.middle_name}
-            onChange={(e) =>
-              setFormData({ ...formData, middle_name: e.target.value })
-            }
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label className="text-sm font-semibold text-gray-700">
-            Relationship
-          </Label>
-          <Input
-            className="bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a]"
-            value={formData.relation}
-            onChange={(e) =>
-              setFormData({ ...formData, relation: e.target.value })
-            }
-            required
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label className="text-sm font-semibold text-gray-700">
-            Contact #
-          </Label>
-          <Input
-            className="bg-white border-gray-300 shadow-sm focus-visible:ring-[#4a5a4a]"
-            value={formData.contact_number}
-            onChange={(e) =>
-              setFormData({ ...formData, contact_number: e.target.value })
-            }
-            required
-          />
+          <div className="relative">
+            <Input
+              type="text"
+              placeholder="+639XXXXXXXXX"
+              className={`bg-white border-gray-300 shadow-sm tracking-wide font-mono focus-visible:ring-[#4a5a4a] ${
+                errors.contact_number &&
+                "border-red-500 focus-visible:ring-red-500"
+              }`}
+              value={formData.contact_number}
+              onChange={handleContactChange}
+            />
+            <span className="absolute right-3 top-2.5 text-xs text-gray-400 font-mono">
+              {formData.contact_number.length}/13
+            </span>
+          </div>
+          {errors.contact_number && (
+            <p className="text-xs text-red-500 font-medium">
+              {errors.contact_number}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Dynamic Dropdown for Employee Selection */}
-      <div className="flex flex-col gap-2">
+      {/* Auditor Selection */}
+      <div className="flex flex-col gap-1.5">
         <Label className="text-sm font-semibold text-gray-700">
-          Assisted / Prepared By
+          Assisted / Prepared By *
         </Label>
         <select
-          className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a] text-gray-800"
+          disabled={isLoadingEmployees}
+          className={`flex h-10 w-full rounded-md border bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#4a5a4a] text-gray-800 ${
+            errors.prepared_by
+              ? "border-red-500 focus:ring-red-500"
+              : "border-gray-300"
+          }`}
           value={formData.prepared_by}
-          onChange={(e) =>
-            setFormData({ ...formData, prepared_by: e.target.value })
-          }
-          required
+          onChange={(e) => {
+            setFormData({ ...formData, prepared_by: e.target.value });
+            if (errors.prepared_by)
+              setErrors((p) => ({ ...p, prepared_by: "" }));
+          }}
         >
-          <option value="">-- Select Assisting Employee --</option>
-          {employees.map((emp) => {
+          <option value="">
+            {isLoadingEmployees
+              ? "Syncing Employee Database..."
+              : "-- Select Assisting Employee --"}
+          </option>
+          {employees.map((emp: any) => {
             const fullName = `${emp.first_name} ${emp.last_name}`;
             return (
               <option key={emp.employee_id} value={fullName}>
-                {fullName} ({emp.role})
+                {fullName} ({emp.role || "Staff"})
               </option>
             );
           })}
         </select>
+        {errors.prepared_by && (
+          <p className="text-xs text-red-500 font-medium">
+            {errors.prepared_by}
+          </p>
+        )}
       </div>
 
       <Button
         type="submit"
-        className="w-full bg-[#4a5a4a] hover:bg-[#3a4a3f] text-white font-bold py-6 rounded-lg transition shadow-sm mt-2"
+        className="w-full bg-[#4a5a4a] hover:bg-[#3a4a3f] text-white font-bold py-6 rounded-lg transition-all shadow-sm mt-3 flex items-center justify-center gap-2"
         disabled={mutation.isPending}
       >
-        {mutation.isPending ? "Saving..." : "Add Contact Person"}
+        {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+        {mutation.isPending
+          ? "Processing Parameters..."
+          : "Add Emergency Contact Person"}
       </Button>
     </form>
   );

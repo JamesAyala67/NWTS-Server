@@ -9,8 +9,10 @@ const logAudit = require("../utils/auditLogger");
 // Responsible for Login and authentication of employees
 router.post("/login", async (req, res) => {
   try {
+    // We extract the 'role' sent from the React frontend
     const { username, password, role } = req.body;
-    // Find
+
+    // Find the user by username
     const [employees] = await db.query(
       "SELECT * FROM employee WHERE username = ? AND is_deleted = 0",
       [username],
@@ -21,11 +23,24 @@ router.post("/login", async (req, res) => {
     }
 
     const user = employees[0];
+
+    // --- NEW: STRICT ROLE CHECK ---
+    // We make it case-insensitive (.toLowerCase()) just to be safe,
+    // ensuring "Admin" matches "admin" in your database.
+    if (user.role.toLowerCase() !== role.toLowerCase()) {
+      return res.status(403).json({
+        error: `Access denied. You do not have ${role} privileges.`,
+      });
+    }
+    // ------------------------------
+
+    // If role matches, verify password
     const isMatch = await bcrypt.compare(password, user.hash);
 
     if (!isMatch) {
       return res.status(401).json({ error: "Invalid username or password" });
     }
+
     // Combine name
     const fullName = user.middle_name
       ? `${user.first_name} ${user.middle_name} ${user.last_name}`

@@ -26,6 +26,16 @@ interface EditPlotModalProps {
   onSuccess: (newStatus: string) => void;
 }
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
+
 export default function EditPlotModal({
   isOpen,
   onClose,
@@ -53,8 +63,8 @@ export default function EditPlotModal({
       status: string;
     }) => {
       // Make a PUT request to update the plot details in the backend
-      return axios.put(
-        `http://localhost:3000/api/plots/maps/${plot.plot_id}/edit`,
+      return api.put(
+        `${API_BASE_URL}/plots/maps/${plot.plot_id}/edit`,
         payload,
       );
     },

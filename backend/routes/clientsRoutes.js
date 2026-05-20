@@ -193,6 +193,15 @@ router.get("/:id", async (req, res) => {
       "SELECT * FROM transactions WHERE client_id = ? AND is_deleted = FALSE ORDER BY date_created DESC",
       [clientId],
     );
+    const [payments] = await db.query(
+      `SELECT p.*, 
+              t.plot_id, 
+              t.plot_type
+       FROM payments p
+       JOIN transactions t ON p.transaction_id = t.transaction_id
+       WHERE t.client_id = ?`,
+      [clientId],
+    );
     const [clientFiles] = await db.query(
       "SELECT * FROM client_files WHERE client_id = ? AND is_deleted = FALSE",
       [clientId],
@@ -203,6 +212,7 @@ router.get("/:id", async (req, res) => {
       co_purchasers: coPurchasers,
       contact_persons: contactPersons,
       transactions: transactions,
+      payments: payments,
       client_files: clientFiles,
     });
   } catch (error) {
@@ -221,7 +231,9 @@ router.post("/:id/files", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
-    const filePath = req.file.path;
+
+    // This explicitly standardizes the path stored in the database for web browsers
+    const filePath = `uploads/${req.file.filename}`;
     const fileId = `FILE-${Date.now()}`;
 
     const sql = `

@@ -5,6 +5,16 @@ import { Plus, TrendingUp, X } from "lucide-react";
 
 import AddPlot from "../../components/forms/AddPlots";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api/";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
+
 export default function PlotsPage() {
   // Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -19,14 +29,6 @@ export default function PlotsPage() {
     employee_id: employeeId,
   });
 
-  //
-  //
-  //
-  // DAE PA FINALIZE
-  //
-  //
-  //
-
   // Plot Query
   const {
     data: plots,
@@ -35,7 +37,7 @@ export default function PlotsPage() {
   } = useQuery({
     queryKey: ["plots"],
     queryFn: async () => {
-      const res = await axios.get("http://localhost:3000/api/plots");
+      const res = await api.get(`${API_BASE_URL}/plots`);
 
       return res.data;
     },
@@ -54,10 +56,7 @@ export default function PlotsPage() {
     }
 
     try {
-      const res = await axios.put(
-        "http://localhost:3000/api/plots/bulk-price",
-        bulkData,
-      );
+      const res = await api.put(`${API_BASE_URL}/plots/bulk-price`, bulkData);
 
       alert(`${res.data.message} (${res.data.plots_affected} plots changed)`);
 

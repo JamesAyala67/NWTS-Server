@@ -14,7 +14,6 @@ import {
   ChevronRight,
   X,
   RotateCcw,
-  AlertTriangle,
 } from "lucide-react";
 
 interface AuditLog {
@@ -42,6 +41,16 @@ interface Stats {
   deletedRecords: number;
   activeUsers: number;
 }
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
 
 export default function AuditLogs() {
   // State Management
@@ -117,7 +126,7 @@ export default function AuditLogs() {
     setLoading(true);
     try {
       const [logsRes, statsRes] = await Promise.all([
-        axios.get(`http://localhost:3000/api/audit-logs`, {
+        api.get(`${API_BASE_URL}/audit-logs`, {
           params: {
             page: currentPage,
             search,
@@ -125,7 +134,7 @@ export default function AuditLogs() {
             tab: activeTab,
           },
         }),
-        axios.get(`http://localhost:3000/api/audit-logs/summary-stats`),
+        api.get(`${API_BASE_URL}/audit-logs/summary-stats`),
       ]);
 
       setLogs(logsRes.data.logs || []);
@@ -142,12 +151,9 @@ export default function AuditLogs() {
   // Fetch items inside soft-delete drawer
   const fetchDeletedRecords = async () => {
     try {
-      const res = await axios.get(
-        `http://localhost:3000/api/audit-logs/deleted-records`,
-        {
-          params: { category: drawerTab, search: drawerSearch },
-        },
-      );
+      const res = await api.get(`${API_BASE_URL}/audit-logs/deleted-records`, {
+        params: { category: drawerTab, search: drawerSearch },
+      });
       setDeletedRecords(res.data || []);
     } catch (err) {
       console.error("Error sourcing deleted archives:", err);
@@ -168,7 +174,7 @@ export default function AuditLogs() {
     )
       return;
     try {
-      await axios.post(`http://localhost:3000/api/audit-logs/restore`, {
+      await api.post(`${API_BASE_URL}/audit-logs/restore`, {
         record_id,
         record_type,
       });
@@ -181,7 +187,7 @@ export default function AuditLogs() {
 
   return (
     <div className="p-6 bg-[#FAF9F5] min-h-screen text-slate-800 relative overflow-x-hidden">
-      {/* Header Viewport Container */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-serif text-[#2C3E2B] font-bold">
@@ -203,7 +209,7 @@ export default function AuditLogs() {
         </div>
       </div>
 
-      {/* Summary Analytics Metrics Row */}
+      {/* Summary Analytics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -259,7 +265,7 @@ export default function AuditLogs() {
         </div>
       </div>
 
-      {/* Segmented Navigation Menu Tabs */}
+      {/* Navigation Menu Tabs */}
       <div className="border-b border-slate-200 mb-5 flex gap-6">
         {[
           "Activity Logs",
@@ -287,7 +293,7 @@ export default function AuditLogs() {
         ))}
       </div>
 
-      {/* Interactive Sub-Action Utility Controls Line */}
+      {/* Interactive Utility */}
       <div className="bg-white p-4 rounded-t-xl border-x border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -313,7 +319,6 @@ export default function AuditLogs() {
               }}
               className="appearance-none bg-white border border-slate-200 text-sm pl-3 pr-8 py-2 rounded-lg font-medium text-slate-600 focus:outline-none cursor-pointer"
             >
-              {/* FIXED: Option values match database layout strings exactly */}
               <option value="All Actions">All Actions</option>
               <option value="EMPLOYEE LOGIN">Employee Login</option>
               <option value="EMPLOYEE LOGOUT">Employee Logout</option>
@@ -333,7 +338,7 @@ export default function AuditLogs() {
         </div>
       </div>
 
-      {/* Main Timeline View Port Layout Grid */}
+      {/* Main Timeline*/}
       <div className="bg-white rounded-b-xl border-x border-b border-slate-200 overflow-hidden shadow-sm">
         {loading ? (
           <div className="p-12 text-center text-sm font-medium text-slate-400">
@@ -353,13 +358,12 @@ export default function AuditLogs() {
                   className="p-4 flex items-start justify-between hover:bg-slate-50/70 transition group relative"
                 >
                   <div className="flex items-start gap-4">
-                    {/* Timestamp Section */}
+                    {/* Timestamp */}
                     <div className="w-28 flex-shrink-0 text-xs text-slate-400 font-medium pt-1">
                       <div>{safeFormatDate(log.date_time, "MMM dd, yyyy")}</div>
                       <div>{safeFormatDate(log.date_time, "hh:mm a")}</div>
                     </div>
 
-                    {/* Colored Indicator Icon Block */}
                     <div className="relative flex flex-col items-center">
                       <div
                         className={`w-8 h-8 rounded-full ${styles.dotBg} flex items-center justify-center shadow-sm z-10`}
@@ -369,7 +373,7 @@ export default function AuditLogs() {
                       <div className="absolute top-8 bottom-[-20px] w-[2px] bg-slate-100 group-last:hidden" />
                     </div>
 
-                    {/* Action Content Labels */}
+                    {/* Action Labels */}
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span
@@ -386,7 +390,6 @@ export default function AuditLogs() {
                     </div>
                   </div>
 
-                  {/* Worker Assignment System Identification Label Tags */}
                   <div className="flex items-center gap-4">
                     <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded border border-slate-200">
                       {log.employee_id || "EMP-4001"}
@@ -399,7 +402,7 @@ export default function AuditLogs() {
           </div>
         )}
 
-        {/* Dynamic Multi-Page Selector Pagination System Block Component */}
+        {/* Dynamic Selector Pagination */}
         <div className="border-t border-slate-200 p-4 flex items-center justify-between text-sm font-medium text-slate-500">
           <div>
             Showing{" "}
@@ -444,13 +447,13 @@ export default function AuditLogs() {
         </div>
       </div>
 
-      {/* ================= RECOVERY SLIDEOUT DRAWER SIDEBAR ================= */}
+      {/* Recovery Drawer */}
       <div
         className={`fixed inset-y-0 right-0 w-full sm:w-[450px] bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out border-l border-slate-200 flex flex-col ${
           isDrawerOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* Drawer Heading Panel Elements */}
+        {/* Drawer Heading */}
         <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
@@ -473,18 +476,8 @@ export default function AuditLogs() {
           </button>
         </div>
 
-        {/* Informative Warning Advisory Box Area */}
-        <div className="p-4 bg-amber-50/60 border-b border-amber-100 flex items-start gap-3 text-amber-800 text-xs">
-          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p>
-            Forty (40) days after deletion, archival records will be permanently
-            purged from system memory storage clusters.
-          </p>
-        </div>
-
-        {/* Sub Category Inline Filters Menu Panel List Options */}
+        {/* Sub Category*/}
         <div className="px-4 pt-3 border-b border-slate-100 flex gap-4 text-xs font-bold text-slate-400">
-          {/* FIXED: Removed "Others" to prevent unhandled filter query states */}
           {["All", "Files", "Clients", "Contacts"].map((tab) => (
             <button
               key={tab}
@@ -499,7 +492,7 @@ export default function AuditLogs() {
           ))}
         </div>
 
-        {/* Isolated Drawer Independent Context Keyword Target Query Element Field */}
+        {/* Isolated Drawer */}
         <div className="p-4 border-b border-slate-100">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -513,7 +506,7 @@ export default function AuditLogs() {
           </div>
         </div>
 
-        {/* Dynamic Populated Scroll List Core Target Container Element */}
+        {/* Dynamic Populated Scroll */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-2">
           {deletedRecords.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400 font-medium">
@@ -566,13 +559,6 @@ export default function AuditLogs() {
               </div>
             ))
           )}
-        </div>
-
-        {/* Footer Fixed Actions Block Base */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50">
-          <button className="w-full bg-white border border-slate-200 hover:bg-slate-100 text-xs font-bold py-2.5 rounded-xl transition shadow-sm text-slate-600 flex items-center justify-center gap-2">
-            <RotateCcw className="w-3.5 h-3.5" /> View Restore History
-          </button>
         </div>
       </div>
     </div>

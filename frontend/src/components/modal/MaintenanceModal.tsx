@@ -24,6 +24,16 @@ interface MaintenanceModalProps {
   onSuccess: () => void;
 }
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
+
 export default function MaintenanceModal({
   isOpen,
   onClose,
@@ -42,23 +52,26 @@ export default function MaintenanceModal({
 
     setIsSubmitting(true);
     try {
-      await axios.post("http://localhost:3000/api/transactions/maintenance", {
+      // FIXED: Changed to relative endpoint path and fixed the payload key name typo
+      await api.post("/transactions/maintenance", {
         plot_id: transaction.plot_id,
         transaction_id: transaction.transaction_id,
         description,
         cost,
         scheduled_date: scheduledDate,
-        paymenta_status: paymentStatus,
+        payment_status: paymentStatus, // FIXED: Removed the extra 'a'
         logged_by: "Admin",
       });
 
       // Call onSuccess to refresh the parent component's data and close the modal
       onSuccess();
       onClose();
+
       // Reset form
       setDescription("");
       setScheduledDate("");
       setCost(0);
+      setPaymentStatus("Unpaid"); // Optional: Reset dropdown state
     } catch (error) {
       console.error(error);
       alert("Failed to schedule maintenance.");

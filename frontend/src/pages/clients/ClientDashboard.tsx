@@ -16,13 +16,21 @@ import {
   InfoCard,
   DataRow,
 } from "../../components/custom/client/ClientDashboardHelper";
+import TransactionDetailsModal from "@/components/modal/TransactionDetailsModal";
 
-const API_URL = "http://localhost:3000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
 
 export default function ClientDashboard() {
   const { id } = useParams();
   const queryClient = useQueryClient();
-  // Get the name and id of the employee base on the localstorage
   const currentEmployeeId = localStorage.getItem("employee_id") || "";
   const currentEmployeeName = localStorage.getItem("userName") || "";
 
@@ -30,11 +38,14 @@ export default function ClientDashboard() {
   const [selectedTransactionForAction, setSelectedTransactionForAction] =
     useState<any>(null);
   const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
+  const [isPrModalOpen, setIsPrModalOpen] = useState(false);
+  const [selectedTransactionForPr, setSelectedTransactionForPr] =
+    useState<any>(null);
   const [activeDrawer, setActiveDrawer] = useState<
-    | "transaction"
+    | "transaction" // AddTransaction.tsx
     | "copurchaser"
     | "contact"
-    | "payment"
+    | "payment" // AddPayments.tsx
     | "interment"
     | "file"
     | null
@@ -44,7 +55,6 @@ export default function ClientDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  // Delete Mutation for CoPurchaser and Contact Person
   const deleteMutation = useMutation({
     mutationFn: async ({
       type,
@@ -53,37 +63,72 @@ export default function ClientDashboard() {
       type: "co-purchaser" | "contact-person";
       recordId: string;
     }) => {
-      const endpoint =
-        type === "co-purchaser"
-          ? `${API_URL}/api/contacts/co-purchasers/${recordId}`
-          : `${API_URL}/api/contacts/contact-persons/${recordId}`;
+      const userRole = localStorage.getItem("userRole");
 
-      return axios.patch(endpoint, {
-        employee_id: currentEmployeeId,
-        deleted_by: currentEmployeeName,
-      });
+      if (userRole === "Admin") {
+        // Direct Delete for Admins (Assuming you have these endpoints in contactRoutes)
+        const endpoint =
+          type === "co-purchaser"
+            ? `/contacts/co-purchasers/${recordId}/delete`
+            : `/contacts/contact-persons/${recordId}/delete`;
+
+        return api.patch(endpoint, {
+          employee_id: currentEmployeeId,
+          deleted_by: currentEmployeeName,
+        });
+      } else {
+        // Send to Request Queue for Staff
+        const endpoint =
+          type === "co-purchaser"
+            ? `/requests/stage-copurchaser/${recordId}`
+            : `/requests/stage-contact/${recordId}`;
+
+        return api.post(endpoint, { submitter_name: currentEmployeeName });
+      }
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
-      toast.success("Record removed successfully");
+
+      if (localStorage.getItem("userRole") === "Admin") {
+        toast.success("Record removed successfully");
+      } else {
+        toast.success("Request Sent", {
+          description: `Deletion request for ${variables.type.replace("-", " ")} sent to Admin.`,
+        });
+      }
     },
-    onError: () => toast.error("Failed to remove record"),
+    onError: () => toast.error("Failed to process request"),
   });
 
-  // Delete Mutation for Client Files
   const deleteFileMutation = useMutation({
     mutationFn: async (fileId: string) => {
-      const endpoint = `${API_URL}/api/clients/files/${fileId}`;
-      return axios.patch(endpoint, {
-        employee_id: currentEmployeeId,
-        deleted_by: currentEmployeeName,
-      });
+      const userRole = localStorage.getItem("userRole");
+
+      if (userRole === "Admin") {
+        // Direct Delete for Admins (uses your existing clientRoutes.js)
+        return api.patch(`/clients/files/${fileId}`, {
+          employee_id: currentEmployeeId,
+          deleted_by: currentEmployeeName,
+        });
+      } else {
+        // Send to Request Queue for Staff
+        return api.post(`/requests/stage-file/${fileId}`, {
+          submitter_name: currentEmployeeName,
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
-      toast.success("File removed successfully");
+
+      if (localStorage.getItem("userRole") === "Admin") {
+        toast.success("File removed successfully");
+      } else {
+        toast.success("Request Sent", {
+          description: "Document deletion request sent to Admin.",
+        });
+      }
     },
-    onError: () => toast.error("Failed to remove file"),
+    onError: () => toast.error("Failed to process file removal"),
   });
 
   const {
@@ -93,7 +138,7 @@ export default function ClientDashboard() {
   } = useQuery({
     queryKey: ["client", id],
     queryFn: async () => {
-      const response = await axios.get(`${API_URL}/api/clients/${id}`);
+      const response = await api.get(`/clients/${id}`);
       return response.data;
     },
   });
@@ -109,13 +154,16 @@ export default function ClientDashboard() {
       setIsMaintenanceModalOpen(true);
     }
   };
+  const handlePrClick = (txn: any) => {
+    setSelectedTransactionForPr(txn);
+    setIsPrModalOpen(true);
+  };
 
   const closeDrawerAndRefresh = () => {
     setActiveDrawer(null);
     queryClient.invalidateQueries({ queryKey: ["client", id] });
   };
 
-  // Calculate available transactions for drawers
   const { availableCoPurchaserTxns, availableContactTxns } = useMemo(() => {
     if (!client)
       return { availableCoPurchaserTxns: [], availableContactTxns: [] };
@@ -124,6 +172,7 @@ export default function ClientDashboard() {
       client.co_purchasers
         ?.filter((cp: any) => cp.is_deleted !== 1)
         .map((cp: any) => cp.transaction_id) || [];
+
     const assignedContactIds =
       client.contact_persons
         ?.filter((c: any) => c.is_deleted !== 1)
@@ -131,15 +180,12 @@ export default function ClientDashboard() {
 
     const unassignedCpTxns =
       client.transactions?.filter(
-        (txn: any) =>
-          !assignedCpIds.includes(txn.transaction_id) &&
-          txn.status === "Completed",
+        (txn: any) => !assignedCpIds.includes(txn.transaction_id),
       ) || [];
+
     const unassignedContactTxns =
       client.transactions?.filter(
-        (txn: any) =>
-          !assignedContactIds.includes(txn.transaction_id) &&
-          txn.status === "Completed",
+        (txn: any) => !assignedContactIds.includes(txn.transaction_id),
       ) || [];
 
     return {
@@ -148,18 +194,51 @@ export default function ClientDashboard() {
     };
   }, [client]);
 
-  // Filtering Transaction base on Search and Status
+  // Combine Transactions and Payments
+  const combinedLedger = useMemo(() => {
+    if (!client) return [];
+
+    const txns = client.transactions || [];
+    const payments = client.payments || [];
+
+    // Combine them and sort by date
+    return [...txns, ...payments].sort((a, b) => {
+      const dateA = new Date(
+        a.payment_date || a.transaction_date || a.date_created || 0,
+      );
+      const dateB = new Date(
+        b.payment_date || b.transaction_date || b.date_created || 0,
+      );
+      return dateB.getTime() - dateA.getTime();
+    });
+  }, [client]);
+
+  // 2. Filter the COMBINED ledger for the table
   const filteredTransactions = useMemo(() => {
-    if (!client?.transactions) return [];
-    return client.transactions.filter((txn: any) => {
+    return combinedLedger.filter((item: any) => {
       const matchesSearch =
-        txn.plot_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        txn.transaction_id?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus =
-        statusFilter === "All" || txn.status === statusFilter;
+        item.professional_receipt
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        item.sales_invoice?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.plot_id?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const isPayment = !!item.payment_id;
+      let matchesStatus = true;
+
+      if (statusFilter !== "All") {
+        if (statusFilter === "Transaction") {
+          matchesStatus = !isPayment; // FIXED: Assign to matchesStatus instead of returning early
+        } else if (statusFilter === "Payment") {
+          matchesStatus = isPayment;
+        } else {
+          matchesStatus = !isPayment && item.status === statusFilter;
+        }
+      }
+
       return matchesSearch && matchesStatus;
     });
-  }, [client?.transactions, searchTerm, statusFilter]);
+  }, [combinedLedger, searchTerm, statusFilter]);
 
   if (isLoading)
     return (
@@ -177,7 +256,6 @@ export default function ClientDashboard() {
   const fullName = `${client.first_name} ${client.middle_name ? client.middle_name + " " : ""}${client.last_name}`;
   const fullAddress = `${client.barangay}, ${client.city}, ${client.province}`;
 
-  // Check if there is transaction that dont have any CoPurchaser and Contact Person assigned
   const canAddCoPurchaser = client.transactions?.some(
     (txn: any) =>
       !client.co_purchasers?.find(
@@ -193,7 +271,6 @@ export default function ClientDashboard() {
       ),
   );
 
-  // Calculate total paid across all plots
   const totalPaid =
     client.transactions?.reduce(
       (sum: number, txn: any) =>
@@ -218,7 +295,6 @@ export default function ClientDashboard() {
 
   return (
     <div className="min-h-screen bg-[#faf8f5] p-4 md:p-8">
-      {/* Navigation to go back to ClientPage */}
       <Link
         to="/clients"
         className="flex items-center text-gray-500 hover:text-[#4a5a4a] mb-6 transition-colors text-sm font-medium"
@@ -226,7 +302,6 @@ export default function ClientDashboard() {
         <ArrowLeft className="mr-2 h-4 w-4" /> Back to Client List
       </Link>
 
-      {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
         <div className="flex items-center gap-4">
           <div className="h-20 w-20 rounded-full bg-[#4a5a4a] flex items-center justify-center text-white text-3xl font-bold shadow-inner">
@@ -263,7 +338,6 @@ export default function ClientDashboard() {
         </div>
       </div>
 
-      {/* Custom InfoCard Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <InfoCard
           title="Client Profile"
@@ -376,11 +450,18 @@ export default function ClientDashboard() {
           ) : (
             <div className="space-y-2 mt-4 max-h-48 overflow-y-auto custom-scrollbar pr-1">
               {client.client_files
-                // Ensuring that soft deleted files will not be shown in the frontend
                 .filter((f: any) => f.is_deleted !== 1)
                 .map((file: any) => {
-                  const safePath = file.file_path.replace(/\\/g, "/");
-                  const fileUrl = `${API_URL}/${safePath}`;
+                  // 1. Standardize formatting to prevent duplicate slashes or dot-segments
+                  let cleanPath = file.file_path.replace(/\\/g, "/");
+                  if (cleanPath.startsWith("../")) {
+                    cleanPath = cleanPath.replace("../", "");
+                  }
+
+                  // 2. CRITICAL FIX: Extract the structural base URL out of the API_BASE_URL parameter
+                  // Drops "/api" so it addresses "http://localhost:3000/uploads/..." directly
+                  const serverBaseUrl = API_BASE_URL.replace(/\/api$/, "");
+                  const fileUrl = `${serverBaseUrl}/${cleanPath}`;
 
                   return (
                     <div
@@ -421,13 +502,23 @@ export default function ClientDashboard() {
       </div>
 
       <TransactionHistoryTable
-        transactions={filteredTransactions}
+        transactions={filteredTransactions} // <-- Pass the FILTERED list, not combinedLedger
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
         onNewTransaction={() => setActiveDrawer("transaction")}
-        onAction={handleTransactionAction}
+        onAction={handleTransactionAction} // <-- Changed from handleAction
+        onPrClick={handlePrClick} // <-- Attached the new function
+      />
+
+      <TransactionDetailsModal
+        isOpen={isPrModalOpen}
+        onClose={() => {
+          setIsPrModalOpen(false);
+          setSelectedTransactionForPr(null);
+        }}
+        transaction={selectedTransactionForPr}
       />
 
       <ClientDashboardDrawer

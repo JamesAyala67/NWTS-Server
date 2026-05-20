@@ -16,19 +16,29 @@ import {
   User,
   ShieldAlert,
   Wrench,
+  Download,
 } from "lucide-react";
+import MegaForm from "@/components/forms/MegaForm";
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
 
 const fetchDashboardSummary = async () => {
-  const { data } = await axios.get(
-    "http://localhost:3000/api/dashboard/summary",
-  );
+  const { data } = await api.get(`${API_BASE_URL}/dashboard/summary`);
   return data;
 };
 
 const searchGlobalMatrix = async (searchTerm: string) => {
   if (!searchTerm) return [];
-  const { data } = await axios.get(
-    `http://localhost:3000/api/dashboard/search-all?q=${encodeURIComponent(searchTerm)}`,
+  const { data } = await api.get(
+    `${API_BASE_URL}/dashboard/search-all?q=${encodeURIComponent(searchTerm)}`,
   );
   return data;
 };
@@ -37,8 +47,10 @@ export default function Dashboard() {
   const [time, setTime] = useState(new Date());
   const [searchQuery, setSearchQuery] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isMegaFormOpen, setIsMegaFormOpen] = useState(false);
+  const [isAddClientOpen, setIsAddClientOpen] = useState(false);
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const userName = localStorage.getItem("userName") || "Admin User";
 
@@ -79,7 +91,24 @@ export default function Dashboard() {
     enabled: searchQuery.trim().length > 0,
   });
 
-  // DateTime Formatting
+  // Excel Multi sheet Generator
+  const handleExportExcelReport = async () => {
+    try {
+      const response = await api.get(`${API_BASE_URL}/reports/export-excel`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `NWTS_System_Report_${Date.now()}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error("Failed to export unified report excel", err);
+    }
+  };
+
   const formattedDate = time.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
@@ -93,7 +122,7 @@ export default function Dashboard() {
 
   return (
     <div className="w-full bg-[#FDFCF8] font-sans p-6 lg:p-8 space-y-8">
-      {/* HEADER SECTION WITH SEARCH */}
+      {/* Header with Search */}
       <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
         <div>
           <h2 className="text-2xl md:text-3xl font-serif font-bold text-[#313c34]">
@@ -104,7 +133,7 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Global Context Search Implementation */}
+        {/* Global Search */}
         <div ref={dropdownRef} className="relative w-full md:w-96 z-40">
           <div className="relative group">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4 group-focus-within:text-[#4A5D4E] transition-colors" />
@@ -193,36 +222,43 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Quick Access Panel */}
+      {/* Quick Access */}
       <div className="bg-white rounded-2xl p-2.5 flex items-center shadow-sm border border-[#EAEFEA] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <h3 className="font-bold text-[#313c34] px-4 whitespace-nowrap text-xs uppercase tracking-wider">
           Quick Access
         </h3>
         <div className="h-8 w-[1px] bg-[#EAEFEA] hidden sm:block mx-1"></div>
         <div className="flex gap-2 pl-2 sm:pl-0">
+          {/* Add Client */}
           <button
-            onClick={() => navigate("/clients")}
+            onClick={() => setIsAddClientOpen(true)}
             className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-white hover:bg-[#4A5D4E] transition-all bg-[#FDFCF8] px-4 py-2.5 rounded-xl border border-[#EAEFEA] whitespace-nowrap"
           >
             <Plus className="h-4 w-4" /> Add Client
           </button>
+
+          {/* Mega Form */}
           <button
-            onClick={() => navigate("/transactions")}
+            onClick={() => setIsMegaFormOpen(true)}
             className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-white hover:bg-[#4A5D4E] transition-all bg-[#FDFCF8] px-4 py-2.5 rounded-xl border border-[#EAEFEA] whitespace-nowrap"
           >
-            <FileText className="h-4 w-4" /> New Transaction
+            <FileText className="h-4 w-4" /> Mega Form (PAF)
           </button>
+
+          {/* View Plots Map */}
           <button
             onClick={() => navigate("/plots/map")}
             className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-white hover:bg-[#4A5D4E] transition-all bg-[#FDFCF8] px-4 py-2.5 rounded-xl border border-[#EAEFEA] whitespace-nowrap"
           >
             <BarChart2 className="h-4 w-4" /> View Plots Map
           </button>
+
+          {/* Generate Report */}
           <button
-            onClick={() => navigate("/reports")}
+            onClick={handleExportExcelReport}
             className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-white hover:bg-[#4A5D4E] transition-all bg-[#FDFCF8] px-4 py-2.5 rounded-xl border border-[#EAEFEA] whitespace-nowrap"
           >
-            <FileText className="h-4 w-4" /> Generate Report
+            <Download className="h-4 w-4" /> Generate Report
           </button>
         </div>
       </div>
@@ -237,13 +273,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MIDDLE OPERATIONAL ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
+        {/* Recent Activites */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#EAEFEA] flex flex-col h-[380px]">
           <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-50">
             <h3 className="font-bold text-[#313c34] flex items-center gap-2">
-              <Clock className="h-4 w-4 text-[#4A5D4E]" /> Activity Stream
+              <Clock className="h-4 w-4 text-[#4A5D4E]" /> Recent Activities
             </h3>
             <button
               onClick={() => navigate("/logs")}
@@ -300,7 +335,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Live Infrastructure Summary */}
+        {/* PLots Information */}
         <div className="flex flex-col gap-6 h-[380px]">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#EAEFEA] flex-1 flex flex-col justify-center relative overflow-hidden group hover:border-[#4A5D4E] transition-colors">
             <h3 className="font-bold text-xs text-gray-400 uppercase tracking-wider mb-2">
@@ -309,16 +344,6 @@ export default function Dashboard() {
             <p className="text-5xl font-serif font-bold text-[#4A5D4E]">
               {isLoading ? "..." : dashboardData?.inventory?.available || 0}
             </p>
-            <div className="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500 text-[#4A5D4E]">
-              <svg
-                width="120"
-                height="120"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M12 2C8.69 2 6 4.69 6 8v14h12V8c0-3.31-2.69-6-6-6z" />
-              </svg>
-            </div>
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#EAEFEA] flex-1 flex flex-col justify-center relative overflow-hidden group hover:border-[#4A5D4E] transition-colors">
@@ -328,16 +353,6 @@ export default function Dashboard() {
             <p className="text-5xl font-serif font-bold text-[#313c34]">
               {isLoading ? "..." : dashboardData?.inventory?.occupied || 0}
             </p>
-            <div className="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:scale-110 transition-transform duration-500 text-[#313c34]">
-              <svg
-                width="120"
-                height="120"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path d="M12 2C8.69 2 6 4.69 6 8v14h12V8c0-3.31-2.69-6-6-6zM11 11H8v2h3v3h2v-3h3v-2h-3V8h-2v3z" />
-              </svg>
-            </div>
           </div>
         </div>
 
@@ -349,14 +364,14 @@ export default function Dashboard() {
           </div>
 
           <div className="flex justify-between items-center mb-4 text-xs font-bold text-gray-500 uppercase tracking-wider">
-            <button className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-[#4A5D4E]">
+            <button className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400">
               <ChevronLeft className="h-4 w-4" />
             </button>
             {new Date().toLocaleDateString("en-US", {
               month: "long",
               year: "numeric",
             })}
-            <button className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-[#4A5D4E]">
+            <button className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
@@ -373,7 +388,6 @@ export default function Dashboard() {
               const year = currDate.getFullYear();
               const month = currDate.getMonth();
               const today = currDate.getDate();
-
               const daysInMonth = new Date(year, month + 1, 0).getDate();
               const firstDayOfMonth = new Date(year, month, 1).getDay();
 
@@ -385,7 +399,6 @@ export default function Dashboard() {
                 dashboardData?.calendarEvents?.maintenance?.map((item: any) =>
                   new Date(item.date).getDate(),
                 ) || [];
-
               const paddingDays = Array(firstDayOfMonth).fill(null);
               const monthDays = Array.from(
                 { length: daysInMonth },
@@ -397,7 +410,6 @@ export default function Dashboard() {
                   return (
                     <div key={`pad-${i}`} className="w-8 h-8 mx-auto"></div>
                   );
-
                 const isToday = day === today;
                 const hasInterment = intermentDays.includes(day);
                 const hasMaintenance = maintenanceDays.includes(day);
@@ -411,13 +423,10 @@ export default function Dashboard() {
                       className={`w-7 h-7 flex items-center justify-center rounded-full text-xs font-semibold transition-all ${
                         isToday
                           ? "bg-[#4A5D4E] text-white shadow-md"
-                          : hasInterment || hasMaintenance
-                            ? "bg-[#FDFCF8] text-[#4A5D4E] border border-[#EAEFEA]"
-                            : "text-gray-600 hover:bg-gray-100"
+                          : "text-gray-600 hover:bg-gray-100"
                       }`}
                     >
                       {day}
-                      {/* Dots underneath */}
                       <div className="absolute -bottom-1 flex gap-0.5">
                         {hasInterment && (
                           <span
@@ -436,22 +445,9 @@ export default function Dashboard() {
               });
             })()}
           </div>
-
-          <div className="mt-2 pt-3 border-t border-gray-50 flex justify-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 bg-[#4A5D4E] rounded-full"></div> Today
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 bg-rose-500 rounded-full"></div> Interment
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 bg-amber-500 rounded-full"></div> Maint.
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* BOTTOM RECORDS MATRIX ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Transactions Table */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-[#EAEFEA] overflow-hidden flex flex-col">
@@ -515,7 +511,7 @@ export default function Dashboard() {
                           {row.plot || "Unassigned"}
                         </td>
                         <td className="px-6 py-4 font-bold text-[#4A5D4E]">
-                          ₱
+                          ₱{" "}
                           {Number(row.amount).toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                           })}
@@ -537,7 +533,7 @@ export default function Dashboard() {
                             onClick={() =>
                               navigate(`/clients/${row.client_id}`)
                             }
-                            className="text-gray-400 hover:text-[#4A5D4E] p-1.5 bg-gray-50 rounded-lg hover:bg-gray-100 border border-transparent hover:border-gray-200 transition-all"
+                            className="text-gray-400 hover:text-[#4A5D4E] p-1.5 bg-gray-50 rounded-lg border border-transparent hover:border-gray-200 transition-all"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
@@ -551,14 +547,15 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Overdue Delinquency Notices Panel */}
+        {/* Notice */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#EAEFEA] flex flex-col justify-between">
           <div>
             <h3 className="font-bold text-[#313c34] mb-1 flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-rose-500" /> Overdue Balances
+              <ShieldAlert className="h-4 w-4 text-amber-500" /> Overdue
+              Accounts
             </h3>
             <p className="text-[11px] text-gray-500 mb-5 font-medium">
-              Accounts exceeding 30-day term limits.
+              Click warning card below for quick client profile redirection.
             </p>
 
             <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
@@ -579,38 +576,23 @@ export default function Dashboard() {
                 dashboardData.overdueNotices.map((notice: any, idx: number) => (
                   <div
                     key={idx}
-                    className="bg-[#FDFCF8] border border-rose-100 rounded-xl p-3.5 shadow-sm hover:border-rose-200 transition-colors flex flex-col gap-2"
+                    onClick={() => navigate(`/clients/${notice.client_id}`)}
+                    className="bg-[#FFFDF9] border border-amber-200/70 hover:border-amber-400 rounded-xl p-4 shadow-sm transition-all duration-200 flex items-center justify-between cursor-pointer group"
                   >
-                    <div className="flex justify-between items-start">
-                      <h4 className="font-bold text-[#313c34] text-sm max-w-[65%] truncate">
-                        {notice.client_name}
-                      </h4>
-                      <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                        {notice.days_overdue} Days Late
-                      </span>
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="p-2 rounded-lg bg-amber-50 text-amber-600 shrink-0 group-hover:bg-amber-100 transition-colors">
+                        <AlertTriangle className="h-4 w-4 animate-pulse" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <h4 className="font-bold text-[#313c34] text-sm truncate">
+                          {notice.client_name}
+                        </h4>
+                        <p className="text-[10px] text-amber-700 font-medium mt-0.5 bg-amber-50 inline-block px-1.5 py-0.5 rounded">
+                          {notice.days_overdue} Days Past Due
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-xs text-gray-600 font-medium">
-                      <span>Principal Balance:</span>
-                      <span className="font-bold text-rose-600">
-                        ₱
-                        {Number(notice.remaining_balance).toLocaleString(
-                          undefined,
-                          { minimumFractionDigits: 2 },
-                        )}
-                      </span>
-                    </div>
-                    <div className="border-t border-rose-50 pt-2 flex justify-between items-center text-[10px] font-medium text-gray-400">
-                      <span>
-                        Issue Date:{" "}
-                        {new Date(notice.due_date).toLocaleDateString()}
-                      </span>
-                      <button
-                        onClick={() => navigate(`/clients/${notice.client_id}`)}
-                        className="flex items-center text-rose-500 hover:text-rose-700 font-bold transition-colors"
-                      >
-                        Review <ChevronRight className="h-3 w-3 ml-0.5" />
-                      </button>
-                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-amber-500 transition-colors ml-2 shrink-0" />
                   </div>
                 ))
               )}
@@ -620,11 +602,13 @@ export default function Dashboard() {
           {dashboardData?.overdueNotices?.length > 0 && (
             <button
               onClick={() => navigate("/clients")}
-              className="w-full mt-5 text-center font-bold text-xs bg-rose-50 text-rose-700 hover:bg-rose-100 py-3 rounded-xl transition-colors"
+              className="w-full mt-5 text-center font-bold text-xs bg-amber-50/50 text-amber-800 hover:bg-amber-100/80 py-3 rounded-xl transition-colors border border-amber-100"
             >
               Review All Delinquent Pipelines
             </button>
           )}
+
+          <MegaForm isOpen={isMegaFormOpen} setIsOpen={setIsMegaFormOpen} />
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
 
-// 1. Fetch Audit Logs with Filtering, Searching, and Pagination
+// Fetch Audit Logs with Filtering, Searching, and Pagination
 router.get("/", async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -38,7 +38,7 @@ router.get("/", async (req, res) => {
       );
     }
 
-    // Action Dropdown Filter Match
+    // Action Dropdown Filter
     if (action_type && action_type !== "All Actions") {
       conditions.push("a.action_type = ?");
       queryParams.push(action_type);
@@ -46,7 +46,7 @@ router.get("/", async (req, res) => {
 
     const whereClause = conditions.join(" AND ");
 
-    // Main Fetch Query (Corrected table join references)
+    // Main Fetch Query
     const dataQuery = `
       SELECT 
         a.audit_id, 
@@ -90,7 +90,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// 2. Fetch Top Card Analytics (Derived directly from your schema state)
+// Fetch Top Card Analytics
 router.get("/summary-stats", async (req, res) => {
   try {
     const [[{ totalLogs }]] = await db.query(
@@ -100,7 +100,6 @@ router.get("/summary-stats", async (req, res) => {
       "SELECT COUNT(*) as pendingMaint FROM maintenance_logs WHERE payment_status = 'Unpaid'",
     );
 
-    // Sum up all soft-deleted records across your active subsystem entities
     const [clientFilesCount] = await db.query(
       "SELECT COUNT(*) as count FROM client_files WHERE is_deleted = 1",
     );
@@ -119,7 +118,6 @@ router.get("/summary-stats", async (req, res) => {
       coPurchasersCount[0].count +
       contactsCount[0].count;
 
-    // Active users fallback calculation: Employees who checked in within the last 24 hours
     const [[{ activeUsers }]] = await db.query(`
       SELECT COUNT(DISTINCT employee_id) as activeUsers 
       FROM audit_logs 
@@ -138,14 +136,12 @@ router.get("/summary-stats", async (req, res) => {
   }
 });
 
-// 3. Fetch soft-deleted rows using a UNION query across your soft-deleted tables
-// 3. Fetch soft-deleted rows using a UNION query across your soft-deleted tables
+// Fetch soft-deleted rows using a UNION query
 router.get("/deleted-records", async (req, res) => {
   try {
     const { category, search } = req.query;
     let queryParams = [];
 
-    // We synthesize a uniform list from your individual distinct tables
     let unionQueries = [];
 
     if (!category || category === "All" || category === "Files") {
@@ -170,9 +166,6 @@ router.get("/deleted-records", async (req, res) => {
         FROM contact_person WHERE is_deleted = 1
       `);
     }
-
-    // CRITICAL FIX: If no tables match this category filter (like "Others"),
-    // stop early and return an empty array to prevent SQL syntax crashes.
     if (unionQueries.length === 0) {
       return res.status(200).json([]);
     }
@@ -194,7 +187,7 @@ router.get("/deleted-records", async (req, res) => {
   }
 });
 
-// 4. Restore soft-deleted items instantly by rewriting flags
+// Restore soft-deleted items instantly by rewriting flags
 router.post("/restore", async (req, res) => {
   try {
     const { record_id, record_type } = req.body;

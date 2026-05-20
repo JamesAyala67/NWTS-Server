@@ -29,11 +29,6 @@ router.post("/:id/co-purchasers", async (req, res) => {
         .json({ error: "Associated transaction not found." });
     }
 
-    // NOTE: If you want to restrict to completed transactions only, uncomment below:
-    // if (txnCheck[0].status !== "Completed") {
-    //   return res.status(400).json({ error: "Co-purchasers can only be added to finalized transactions." });
-    // }
-
     // Ensures only one active co-purchaser is allowed per transaction
     const [existing] = await db.query(
       "SELECT co_purchaser_id FROM co_purchaser WHERE transaction_id = ? AND is_deleted = 0",

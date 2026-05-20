@@ -6,8 +6,9 @@ import {
   Outlet,
 } from "react-router-dom";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
-import DashboardLayout from "./components/custom/DashboardLayout"; // <-- Add this import
+import DashboardLayout from "./components/custom/DashboardLayout";
 
+// Pages
 import LoginPage from "./pages/Login/LoginPage";
 import DashboardPage from "./pages/Dashboard/DashboardPage";
 import ClientPage from "./pages/clients/ClientPage";
@@ -16,7 +17,10 @@ import PlotsPage from "./pages/plots/PlotsPage";
 import PlotsMap from "./pages/plots/PlotsMap";
 import AuditLogs from "./pages/audit/auditPage";
 
-// Create a wrapper that connects router to the Sidebar Layout
+// NEW IMPORTS
+import AccountPage from "./pages/AccountPage";
+import RequestPage from "./pages/RequestPage";
+
 function AuthenticatedLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,7 +43,6 @@ function AuthenticatedLayout() {
       onNavigate={(path) => navigate(path)}
       onLogout={handleLogout}
     >
-      {/* <Outlet /> is the magic window where React Router puts your page content */}
       <Outlet />
     </DashboardLayout>
   );
@@ -48,12 +51,8 @@ function AuthenticatedLayout() {
 export default function App() {
   return (
     <Routes>
-      {/* Public Route (No Sidebar here) */}
       <Route path="/" element={<LoginPage />} />
 
-      {/* 2. We wrap ALL protected routes inside our new AuthenticatedLayout 
-        This means the Sidebar will automatically appear on all of these pages!
-      */}
       <Route
         element={
           <ProtectedRoute>
@@ -66,10 +65,9 @@ export default function App() {
         <Route path="/clients/:id" element={<ClientDashboard />} />
         <Route path="/plots" element={<PlotsPage />} />
         <Route path="/plots/map" element={<PlotsMap />} />
-
-        {/* Notice your path here is /audit-logs, but your sidebar said /logs. 
-            Make sure they match! I'll use /logs to match the sidebar. */}
         <Route path="/logs" element={<AuditLogs />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/request" element={<RequestPage />} />
       </Route>
     </Routes>
   );

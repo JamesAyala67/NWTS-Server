@@ -5,6 +5,15 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
 export default function AddPlot() {
   const [block, setBlock] = useState("");
   const [lot, setLot] = useState("");
@@ -53,7 +62,7 @@ export default function AddPlot() {
         employee_id: employeeId, // Included for the backend Audit Trail
       };
 
-      await axios.post("http://localhost:3000/api/plots/", payload);
+      await api.post(`${API_BASE_URL}/plots/`, payload);
       alert(`Plot ${generatedPlotId} successfully added!`);
       window.location.reload();
     } catch (error: any) {

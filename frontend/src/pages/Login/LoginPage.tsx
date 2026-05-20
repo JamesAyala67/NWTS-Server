@@ -3,8 +3,18 @@ import axios from "axios";
 import { User, Lock, Eye, EyeOff, ShieldCheck } from "lucide-react";
 
 // Lalaag ko kuta mukha ni Lowell
-// import EasterEgg from "../../assets/login-bg.png";
-import LoginBG from "../../assets/login-1.jpg";
+import LoginBG from "../../assets/login-bg.png";
+// import LoginBG from "../../assets/login-1.jpg";
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
 
 export default function Login() {
   const [role, setRole] = useState<"Staff" | "Admin">("Staff");
@@ -16,14 +26,11 @@ export default function Login() {
     e.preventDefault();
 
     try {
-      const response = await axios.post(
-        "http://localhost:3000/api/auth/login",
-        {
-          username,
-          password,
-          role,
-        },
-      );
+      const response = await api.post(`${API_BASE_URL}/auth/login`, {
+        username,
+        password,
+        role,
+      });
       // Save the JWT token returned by the backend to local Storage
       // This token will be used for authenticating future API requests to protected routes
       localStorage.setItem("token", response.data.token);
@@ -33,7 +40,7 @@ export default function Login() {
       localStorage.setItem("userRole", response.data.user.role);
       // Redirect to the Landing Page after Successful login
       // Palitan nlng ni sa Dashboard pag na Implement na tultol
-      window.location.href = "/clients";
+      window.location.href = "/dashboard";
     } catch (error: any) {
       // If the backend sends back a 401 (Unauthorized), show an alert
       alert(

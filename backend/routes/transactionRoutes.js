@@ -9,8 +9,9 @@ router.post("/", async (req, res) => {
 
   try {
     const {
-      transaction_id,
       client_id,
+      professional_receipt,
+      sales_invoice,
       plot_id,
       plot_type,
       plot_size,
@@ -20,6 +21,7 @@ router.post("/", async (req, res) => {
       remaining_balance,
       status,
       years_to_pay,
+      remarks,
       prepared_by,
       employee_id,
     } = req.body;
@@ -28,14 +30,27 @@ router.post("/", async (req, res) => {
 
     await connection.beginTransaction();
 
+    // Actually fetch the last transaction ID from the database
+    const [lastTxn] = await connection.query(
+      "SELECT transaction_id FROM transactions ORDER BY transaction_id DESC LIMIT 1",
+    );
+
+    let transaction_id = "TXN-0001";
+    if (lastTxn.length > 0 && lastTxn[0].transaction_id) {
+      const lastNumber = parseInt(lastTxn[0].transaction_id.split("-")[1] || 0);
+      transaction_id = `TXN-${String(lastNumber + 1).padStart(4, "0")}`;
+    }
+
     // Insert new transaction record
     await connection.query(
       `INSERT INTO transactions 
-      (transaction_id, client_id, plot_id, plot_type, plot_size, plot_price, downpayment, monthlypayment, remaining_balance, status, years_to_pay, prepared_by) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (transaction_id, client_id, professional_receipt, sales_invoice, plot_id, plot_type, plot_size, plot_price, downpayment, monthlypayment, remaining_balance, status, years_to_pay, remarks, prepared_by) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         transaction_id,
         client_id,
+        professional_receipt,
+        sales_invoice,
         plot_id,
         plot_type,
         plot_size,
@@ -45,9 +60,20 @@ router.post("/", async (req, res) => {
         remaining_balance,
         status,
         years_to_pay,
+        remarks,
         prepared_by,
       ],
     );
+
+    // Added the missing [client_id] parameter
+    const [clients] = await connection.query(
+      "SELECT * FROM clients WHERE is_deleted = FALSE AND client_id = ?",
+      [client_id],
+    );
+
+    if (clients.length === 0) {
+      throw new Error("Client not found");
+    }
 
     // Update the plot status to Reserved
     await connection.query(
@@ -55,24 +81,35 @@ router.post("/", async (req, res) => {
       [plot_id],
     );
 
-    // 3. Write to Audit Logs
+    // Properly extracted names from the database result, not the string ID
+    const client = clients[0];
+    const middleInitial = client.middle_name
+      ? `${client.middle_name.charAt(0)}.`
+      : "";
+    const fullname =
+      `${client.last_name}, ${client.first_name} ${middleInitial}`.trim();
+
+    // Write to Audit Logs
     await logAudit(
       activeEmployee,
       "CREATE TRANSACTION",
-      `Created transaction ${transaction_id} for client ID ${client_id} (Plot: ${plot_id}). Balance: ₱${remaining_balance}`,
+      `Created transaction ${professional_receipt}, ${sales_invoice} for ${fullname} (Plot: ${plot_id}). Balance: ₱${remaining_balance}`,
       transaction_id,
       connection,
     );
 
     await connection.commit();
 
-    res
-      .status(201)
-      .json({ message: "Transaction saved and plot marked as Reserved" });
+    res.status(201).json({
+      message: "Transaction saved and plot marked as Reserved",
+      transaction_id,
+    });
   } catch (error) {
     await connection.rollback();
     console.error(error);
-    res.status(500).json({ error: "Failed to save transaction" });
+    res
+      .status(500)
+      .json({ error: error.message || "Failed to save transaction" });
   } finally {
     connection.release();
   }
@@ -275,6 +312,29 @@ router.patch("/maintenance/:id/pay", async (req, res) => {
     res.status(500).json({ error: "Failed to update status." });
   } finally {
     connection.release();
+  }
+});
+
+// Update Transaction Remarks
+router.patch("/:id/remarks", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { remarks } = req.body;
+
+    // Update the remarks in the database
+    const [result] = await db.query(
+      "UPDATE transactions SET remarks = ? WHERE transaction_id = ?",
+      [remarks, id],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Transaction not found." });
+    }
+
+    res.json({ message: "Remarks updated successfully!" });
+  } catch (error) {
+    console.error("Error updating remarks:", error);
+    res.status(500).json({ error: "Failed to update remarks." });
   }
 });
 

@@ -49,6 +49,17 @@ type Client = {
   barangay: string;
 };
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
+
 function ClientPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -114,7 +125,7 @@ function ClientPage() {
   } = useQuery<Client[]>({
     queryKey: ["clients"],
     queryFn: async () => {
-      const response = await axios.get("http://localhost:3000/api/clients");
+      const response = await api.get(`${API_BASE_URL}/clients`);
       return response.data;
     },
   });
@@ -122,7 +133,7 @@ function ClientPage() {
   const { data: employees = [] } = useQuery({
     queryKey: ["employees"],
     queryFn: async () => {
-      const response = await axios.get("http://localhost:3000/api/employees");
+      const response = await api.get(`${API_BASE_URL}/employees`);
       return response.data;
     },
   });
@@ -143,7 +154,7 @@ function ClientPage() {
         barangays?.find((b: { code: string }) => b.code === selectedBarangay)
           ?.name || "";
 
-      return await axios.post("http://localhost:3000/api/clients", {
+      return await api.post(`${API_BASE_URL}/clients`, {
         client_id: generatedClientId,
         ...newClient,
         province: selectedProvName,
@@ -188,71 +199,64 @@ function ClientPage() {
 
   // Edit client mutation
   const editClientMutation = useMutation({
-    mutationFn: async (updatedClient: typeof editFormData) => {
-      const provName =
-        provinces?.find(
-          (p: { code: string; name: string }) => p.code === selectedProvince,
-        )?.name || selectedProvince;
-      const cityName =
-        cities?.find(
-          (c: { code: string; name: string }) => c.code === selectedCity,
-        )?.name || selectedCity;
-      const brgyName =
-        barangays?.find(
-          (b: { code: string; name: string }) => b.code === selectedBarangay,
-        )?.name || selectedBarangay;
+    mutationFn: async ({
+      clientId,
+      formData,
+    }: {
+      clientId: string;
+      formData: any;
+    }) => {
+      const userRole = localStorage.getItem("userRole");
+      const currentEmployeeName =
+        localStorage.getItem("userName") || "Staff Member";
 
-      return await axios.put(
-        `http://localhost:3000/api/clients/${updatedClient.client_id}`,
-        {
-          first_name: updatedClient.first_name,
-          middle_name: updatedClient.middle_name,
-          last_name: updatedClient.last_name,
-          civil_status: updatedClient.civil_status,
-          contact_number: updatedClient.contact_number,
-          birthdate: updatedClient.birthdate,
-          province: provName,
-          city: cityName,
-          barangay: brgyName,
-          edited_by: employeeId,
-        },
-      );
+      if (userRole === "Admin") {
+        return api.put(`/clients/${clientId}`, formData);
+      } else {
+        return api.post(`/requests/stage-edit-client/${clientId}`, {
+          submitter_name: currentEmployeeName,
+          edit_data: formData, // Flat form object (e.g., { first_name: 'James', ... })
+        });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
-      setIsEditOpen(false);
-
-      toast.success("Client Updated", {
-        description: "Changes saved successfully.",
-      });
+      queryClient.invalidateQueries({ queryKey: ["client"] });
+      toast.success("Action processed successfully!");
     },
-    onError: (error) => {
-      console.error("Error updating client:", error);
-      toast.error("Error", {
-        description: "Failed to update client details.",
-      });
-    },
+    onError: () => toast.error("Failed to process update request."),
   });
+
+  const currentEmployee = employees.find(
+    (emp: any) => emp.employee_id === employeeId,
+  );
+  const submitterName = currentEmployee
+    ? `${currentEmployee.first_name} ${currentEmployee.last_name}`
+    : "Front Office Staff";
 
   // Delete client mutation
   const deleteClientMutation = useMutation({
     mutationFn: async (clientID: string) => {
-      return await axios.patch(
-        `http://localhost:3000/api/clients/${clientID}/delete`,
-        { employee_id: employeeId },
+      // ROUTE TO REQUEST QUEUE INSTEAD OF DIRECT DELETE
+      return await api.post(
+        `${API_BASE_URL}/requests/stage-client/${clientID}`,
+        {
+          submitter_name: submitterName, // Matches backend requirement
+        },
       );
     },
     onSuccess: () => {
+      // Invalidate client queries to keep layout uniform
       queryClient.invalidateQueries({ queryKey: ["clients"] });
 
-      toast.success("Client Removed", {
-        description: "Client has been soft-deleted.",
+      toast.success("Deletion Requested", {
+        description:
+          "This removal request has been sent to the Admin queue for review.",
       });
     },
     onError: (error) => {
-      console.error("Error deleting client:", error);
+      console.error("Error staging client deletion:", error);
       toast.error("Error", {
-        description: "Could not delete client.",
+        description: "Could not submit deletion request.",
       });
     },
   });

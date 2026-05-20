@@ -36,6 +36,16 @@ interface TransferModalProps {
   onSuccess: () => void;
 }
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
+
 export default function TransferModal({
   isOpen,
   onClose,
@@ -52,7 +62,7 @@ export default function TransferModal({
     if (isOpen) {
       const fetchClients = async () => {
         try {
-          const res = await axios.get("http://localhost:3000/api/clients");
+          const res = await api.get(`${API_BASE_URL}/clients`);
           const otherClients = res.data.filter(
             (c: any) => c.client_id !== transaction?.client_id,
           );
@@ -70,7 +80,7 @@ export default function TransferModal({
 
     setIsSubmitting(true);
     try {
-      await axios.post("http://localhost:3000/api/transactions/transfer", {
+      await api.post(`${API_BASE_URL}/transactions/transfer`, {
         old_transaction_id: transaction.transaction_id,
         new_client_id: selectedClientId,
         plot_id: transaction.plot_id,

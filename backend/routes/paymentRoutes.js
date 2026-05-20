@@ -11,6 +11,8 @@ router.post("/", async (req, res) => {
   try {
     const {
       transaction_id,
+      professional_receipt, // Grab the PR string from frontend
+      sales_invoice, // Grab the SI string from frontend
       amount_paid,
       payment_method,
       reference_number,
@@ -26,12 +28,14 @@ router.post("/", async (req, res) => {
 
     await connection.beginTransaction();
 
-    // Insert a new payment record
+    // Insert a new payment record (Updated with professional_receipt and sales_invoice columns)
     await connection.query(
-      "INSERT INTO payments (payment_id, transaction_id, amount_paid, payment_method, reference_number, recorded_by) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO payments (payment_id, transaction_id, professional_receipt, sales_invoice, amount_paid, payment_method, reference_number, recorded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [
         payment_id,
         transaction_id,
+        professional_receipt,
+        sales_invoice,
         amount_paid,
         payment_method,
         reference_number,
@@ -75,7 +79,7 @@ router.post("/", async (req, res) => {
     await logAudit(
       activeEmployee,
       "ADD PAYMENT",
-      `Recorded a payment of ₱${Number(amount_paid).toLocaleString()} for Transaction ${transaction_id} via ${payment_method}.${completionNote}`,
+      `Recorded a payment of ₱${Number(amount_paid).toLocaleString()} for ${professional_receipt}, ${sales_invoice} via ${payment_method}.${completionNote}`,
       transaction_id,
       connection,
     );

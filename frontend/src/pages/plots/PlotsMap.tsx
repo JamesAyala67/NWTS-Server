@@ -85,6 +85,16 @@ export const getYear = (dateString?: string) => {
   return isNaN(date.getTime()) ? "?" : date.getFullYear();
 };
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "ngrok-skip-browser-warning": "true",
+    "Content-Type": "application/json",
+  },
+});
+
 export default function PlotMap() {
   const queryClient = useQueryClient();
 
@@ -104,9 +114,7 @@ export default function PlotMap() {
   } = useQuery<Plot[]>({
     queryKey: ["plots"],
     queryFn: async () => {
-      const res = await axios.get<Plot[]>(
-        "http://localhost:3000/api/plots/maps",
-      );
+      const res = await api.get<Plot[]>(`${API_BASE_URL}/plots/maps`);
       return res.data;
     },
   });
@@ -116,8 +124,8 @@ export default function PlotMap() {
     queryKey: ["transaction", selectedPlot?.transaction_id],
     queryFn: async () => {
       if (!selectedPlot?.transaction_id) return null;
-      const res = await axios.get(
-        `http://localhost:3000/api/transactions/${selectedPlot.transaction_id}`,
+      const res = await api.get(
+        `${API_BASE_URL}/transactions/${selectedPlot.transaction_id}`,
       );
       return res.data;
     },
