@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
+const logAudit = require("../utils/auditLogger");
 
 // Fetch Audit Logs with Filtering, Searching, and Pagination
 router.get("/", async (req, res) => {
@@ -13,10 +14,7 @@ router.get("/", async (req, res) => {
     let conditions = ["1=1"];
     let queryParams = [];
 
-    // Filter logs based on the Navigation Tabs
-    if (tab === "Maintenance Logs") {
-      conditions.push("a.action_type LIKE '%MAINTENANCE%'");
-    } else if (tab === "System Events") {
+    if (tab === "System Events") {
       conditions.push("a.action_type IN ('EMPLOYEE LOGIN', 'EMPLOYEE LOGOUT')");
     } else if (tab === "Deleted Records") {
       conditions.push(
@@ -24,7 +22,6 @@ router.get("/", async (req, res) => {
       );
     }
 
-    // Keyword Search (IDs, descriptions, employee name strings)
     if (search) {
       conditions.push(
         "(a.action_description LIKE ? OR a.audit_id LIKE ? OR e.first_name LIKE ? OR e.last_name LIKE ?)",
@@ -38,7 +35,6 @@ router.get("/", async (req, res) => {
       );
     }
 
-    // Action Dropdown Filter
     if (action_type && action_type !== "All Actions") {
       conditions.push("a.action_type = ?");
       queryParams.push(action_type);
@@ -46,7 +42,6 @@ router.get("/", async (req, res) => {
 
     const whereClause = conditions.join(" AND ");
 
-    // Main Fetch Query
     const dataQuery = `
       SELECT 
         a.audit_id, 
@@ -96,9 +91,6 @@ router.get("/summary-stats", async (req, res) => {
     const [[{ totalLogs }]] = await db.query(
       "SELECT COUNT(*) as totalLogs FROM audit_logs",
     );
-    const [[{ pendingMaint }]] = await db.query(
-      "SELECT COUNT(*) as pendingMaint FROM maintenance_logs WHERE payment_status = 'Unpaid'",
-    );
 
     const [clientFilesCount] = await db.query(
       "SELECT COUNT(*) as count FROM client_files WHERE is_deleted = 1",
@@ -126,7 +118,6 @@ router.get("/summary-stats", async (req, res) => {
 
     res.status(200).json({
       totalLogs,
-      pendingMaint,
       deletedRecords,
       activeUsers: activeUsers || 1,
     });
@@ -187,10 +178,10 @@ router.get("/deleted-records", async (req, res) => {
   }
 });
 
-// Restore soft-deleted items instantly by rewriting flags
+// Restore soft-deleted record
 router.post("/restore", async (req, res) => {
   try {
-    const { record_id, record_type } = req.body;
+    const { record_id, record_type, employee_id, restored_by } = req.body;
     let targetTable = "";
     let idColumn = "";
 
@@ -217,29 +208,23 @@ router.post("/restore", async (req, res) => {
           .json({ error: "Invalid record type context requested." });
     }
 
-    // Toggle the deletion flag back to active status (0)
-    const updateQuery = `UPDATE ${targetTable} SET is_deleted = 0 WHERE ${idColumn} = ?`;
-    await db.query(updateQuery, [record_id]);
-
-    // Write a fresh event record into the central system log history trail
     await db.query(
-      "INSERT INTO audit_logs (audit_id, employee_id, action_type, action_description, date_time) VALUES (?, ?, ?, ?, NOW())",
-      [
-        `AUD-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`,
-        "EMP-4001",
-        "RESTORE RECORD",
-        `Restored soft-deleted ${record_type} entry with identification ID: ${record_id}`,
-      ],
+      `UPDATE ${targetTable} SET is_deleted = 0 WHERE ${idColumn} = ?`,
+      [record_id],
+    );
+
+    await logAudit(
+      employee_id || null,
+      "RESTORE RECORD",
+      `${restored_by || "Admin"} restored soft-deleted ${record_type} record with ID: ${record_id}.`,
+      record_type === "Clients" ? record_id : null,
     );
 
     res
       .status(200)
       .json({ message: "Record successfully recovered and normalized." });
   } catch (error) {
-    console.error(
-      "Error executing system rollback restore operational tasks:",
-      error,
-    );
+    console.error("Error executing restore:", error);
     res.status(500).json({ error: "Failed to execute recovery process." });
   }
 });

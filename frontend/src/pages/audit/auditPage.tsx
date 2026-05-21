@@ -36,7 +36,6 @@ interface DeletedRecord {
 
 interface Stats {
   totalLogs: number;
-  pendingMaint: number;
   deletedRecords: number;
   activeUsers: number;
 }
@@ -56,7 +55,6 @@ export default function AuditLogs() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalLogs: 0,
-    pendingMaint: 0,
     deletedRecords: 0,
     activeUsers: 0,
   });
@@ -196,15 +194,6 @@ export default function AuditLogs() {
             Track system activity, and recover deleted data.
           </p>
         </div>
-
-        <div className="flex items-center gap-3 mt-4 md:mt-0">
-          <div className="bg-white border border-slate-200 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm text-slate-600">
-            <span>May 12, 2026 - May 19, 2026</span>
-          </div>
-          <button className="bg-white border border-slate-200 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm text-slate-600 hover:bg-slate-50">
-            <Filter className="w-4 h-4" /> Filters
-          </button>
-        </div>
       </div>
 
       {/* Summary Analytics */}
@@ -216,17 +205,6 @@ export default function AuditLogs() {
           <p className="text-2xl font-bold text-slate-800 mt-1">
             {stats.totalLogs.toLocaleString()}
           </p>
-          <p>
-            <span className="text-xs text-emerald-600 font-medium">
-              +18% vs last 7 days
-            </span>
-          </p>
-        </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-          <p className="text-2xl font-bold text-slate-800 mt-1">
-            {stats.pendingMaint}
-          </p>
-          <span className="text-xs text-rose-600 font-medium">3 overdue</span>
         </div>
         <div
           className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm cursor-pointer hover:bg-slate-50 transition"
@@ -250,12 +228,6 @@ export default function AuditLogs() {
           </p>
           <p className="text-2xl font-bold text-slate-800 mt-1">
             {stats.activeUsers}
-          </p>
-          <p>
-            <span className="text-xs text-emerald-600 font-medium flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>{" "}
-              Online now
-            </span>
           </p>
         </div>
       </div>

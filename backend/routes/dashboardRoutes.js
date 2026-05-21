@@ -139,7 +139,7 @@ router.get("/summary", async (req, res) => {
         // 1% Penalty per month overdue applied to remaining balance
         let penalty = 0;
         if (monthsOverdue > 0) {
-          penalty = parseFloat(txn.remaining_balance) * 0.01 * monthsOverdue;
+          penalty = parseFloat(txn.monthlypayment) * 0.01 * monthsOverdue;
         }
 
         noticesRows.push({
@@ -148,7 +148,7 @@ router.get("/summary", async (req, res) => {
           pr_number: txn.pr_number,
           si_number: txn.si_number,
           days_overdue: daysOverdue,
-          remaining_balance: parseFloat(txn.remaining_balance) + penalty,
+          remaining_balance: parseFloat(txn.monthlypayment) + penalty,
         });
       }
     });

@@ -33,6 +33,9 @@ const api = axios.create({
   },
 });
 
+const TRANSACTIONS_PER_PAGE = 8;
+const TRANSACTIONS_MAX_DAYS = 10;
+
 const fetchDashboardSummary = async () => {
   const { data } = await api.get("/dashboard/summary");
   return data;
@@ -53,6 +56,9 @@ export default function Dashboard() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMegaFormOpen, setIsMegaFormOpen] = useState(false);
   const [isAddClientOpen, setIsAddClientOpen] = useState(false);
+
+  // Transactions pagination
+  const [txPage, setTxPage] = useState(1);
 
   // Add Client Form States
   const [clientForm, setClientForm] = useState({
@@ -76,27 +82,23 @@ export default function Dashboard() {
   const [selectedCity, setSelectedCity] = useState<string>("");
   const [selectedBarangay, setSelectedBarangay] = useState<string>("");
 
-  // Custom address hook handles all fetching and structural states automatically
   const { provinces, cities, barangays } = useAddress(
     selectedProvince,
     selectedCity,
     selectedBarangay,
   );
 
-  // Employees State
   const [employees, setEmployees] = useState<any[]>([]);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const userName = localStorage.getItem("userName") || "Admin User";
 
-  // Clock Ticker
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch employees list for form assignment
   useEffect(() => {
     api
       .get("/employees")
@@ -104,7 +106,6 @@ export default function Dashboard() {
       .catch(console.error);
   }, []);
 
-  // Close search dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -118,7 +119,6 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Summary Fetching Hook
   const {
     data: dashboardData,
     isLoading,
@@ -128,12 +128,31 @@ export default function Dashboard() {
     queryFn: fetchDashboardSummary,
   });
 
-  // Global Context Search Hook
   const { data: searchResults, isLoading: isSearching } = useQuery({
     queryKey: ["globalMatrixSearch", searchQuery],
     queryFn: () => searchGlobalMatrix(searchQuery),
     enabled: searchQuery.trim().length > 0,
   });
+
+  // Filter transactions to last 10 days, then paginate
+  const filteredTransactions = (() => {
+    if (!dashboardData?.recentTransactions) return [];
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - TRANSACTIONS_MAX_DAYS);
+    cutoff.setHours(0, 0, 0, 0);
+    return dashboardData.recentTransactions.filter((item: any) => {
+      return new Date(item.date) >= cutoff;
+    });
+  })();
+
+  const totalTxPages = Math.max(
+    1,
+    Math.ceil(filteredTransactions.length / TRANSACTIONS_PER_PAGE),
+  );
+  const paginatedTransactions = filteredTransactions.slice(
+    (txPage - 1) * TRANSACTIONS_PER_PAGE,
+    txPage * TRANSACTIONS_PER_PAGE,
+  );
 
   const handleExportExcelReport = async () => {
     try {
@@ -142,9 +161,8 @@ export default function Dashboard() {
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
-      const urlTimestamp = Date.now();
       link.href = url;
-      link.setAttribute("download", `NWTS_System_Report_${urlTimestamp}.xlsx`);
+      link.setAttribute("download", `NWTS_System_Report_${Date.now()}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -156,18 +174,15 @@ export default function Dashboard() {
     }
   };
 
-  // Add Client Handler matches the ClientPage submission logic
   const handleAddClientSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmittingClient(true);
-
     try {
       const employeeId = localStorage.getItem("employee_id") || "EMP-001";
       const currentYear = new Date().getFullYear().toString().slice(-2);
       const randomNumbers = Math.floor(10000 + Math.random() * 90000);
       const generatedClientId = `${currentYear}-${randomNumbers}`;
 
-      // Convert location selection codes to display text strings before transmitting
       const selectedProvName =
         provinces?.find((p: any) => p.code === selectedProvince)?.name || "";
       const selectedCityName =
@@ -186,13 +201,9 @@ export default function Dashboard() {
       };
 
       await api.post("/clients", payload);
-
-      // Instantly refresh analytics information
       queryClient.invalidateQueries({ queryKey: ["dashboardSummary"] });
-
       alert("Client profile registered successfully!");
 
-      // Clear input fields and location states
       setIsAddClientOpen(false);
       setClientForm({
         first_name: "",
@@ -217,7 +228,6 @@ export default function Dashboard() {
     }
   };
 
-  // Calendar Month Navigation
   const handlePrevMonth = () => {
     setCalendarDate(
       new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1),
@@ -245,7 +255,6 @@ export default function Dashboard() {
     <div className="w-full bg-[#FDFCF8] font-sans p-4 md:p-6 lg:p-8 space-y-6 md:space-y-8">
       {/* Header with Search */}
       <header className="flex flex-col gap-4">
-        {/* Top row: greeting + date/time */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-xl md:text-3xl font-serif font-bold text-[#313c34]">
@@ -256,7 +265,6 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {/* Date / Time widgets — hidden on very small screens, shown sm+ */}
           <div className="hidden sm:flex gap-3 shrink-0">
             <div className="bg-white border border-[#EAEFEA] rounded-2xl p-3 px-4 flex items-center gap-3 shadow-sm">
               <CalendarIcon className="text-[#4A5D4E] h-5 w-5 shrink-0" />
@@ -278,7 +286,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Bottom row: search (full width on mobile) */}
         <div ref={dropdownRef} className="relative w-full z-40">
           <div className="relative group">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4 group-focus-within:text-[#4A5D4E] transition-colors" />
@@ -363,21 +370,18 @@ export default function Dashboard() {
           >
             <Plus className="h-4 w-4" /> Add Client
           </button>
-
           <button
             onClick={() => setIsMegaFormOpen(true)}
             className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-white hover:bg-[#4A5D4E] transition-all bg-[#FDFCF8] px-4 py-2.5 rounded-xl border border-[#EAEFEA] whitespace-nowrap"
           >
             <FileText className="h-4 w-4" /> Mega Form (PAF)
           </button>
-
           <button
             onClick={() => navigate("/plots/map")}
             className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-white hover:bg-[#4A5D4E] transition-all bg-[#FDFCF8] px-4 py-2.5 rounded-xl border border-[#EAEFEA] whitespace-nowrap"
           >
             <BarChart2 className="h-4 w-4" /> View Plots Map
           </button>
-
           <button
             onClick={handleExportExcelReport}
             className="flex items-center gap-2 text-sm font-bold text-gray-600 hover:text-white hover:bg-[#4A5D4E] transition-all bg-[#FDFCF8] px-4 py-2.5 rounded-xl border border-[#EAEFEA] whitespace-nowrap"
@@ -398,7 +402,7 @@ export default function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activities */}
+        {/* ── Recent Activities (mobile-fixed) ── */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#EAEFEA] flex flex-col min-h-[300px] lg:h-[380px]">
           <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-50">
             <h3 className="font-bold text-[#313c34] flex items-center gap-2">
@@ -412,7 +416,7 @@ export default function Dashboard() {
             </button>
           </div>
 
-          <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1">
+          <div className="space-y-3 overflow-y-auto pr-1 custom-scrollbar flex-1">
             {isLoading ? (
               <p className="text-sm font-medium text-gray-400 text-center mt-10">
                 Syncing feeds...
@@ -422,11 +426,13 @@ export default function Dashboard() {
                 No recent logs recorded.
               </p>
             ) : (
-              dashboardData.recentActivity.map((act: any, i: number) => (
-                <div key={i} className="flex justify-between items-start gap-3">
-                  <div className="flex items-start gap-3">
+              dashboardData.recentActivity
+                .slice(0, 5)
+                .map((act: any, i: number) => (
+                  <div key={i} className="flex items-start gap-3 min-w-0">
+                    {/* Icon — never shrinks */}
                     <div
-                      className={`p-2 rounded-lg shrink-0 ${
+                      className={`p-2 rounded-lg shrink-0 mt-0.5 ${
                         act.log_type === "audit"
                           ? "bg-emerald-50 text-emerald-600"
                           : "bg-blue-50 text-blue-600"
@@ -438,23 +444,26 @@ export default function Dashboard() {
                         <Wrench className="w-3.5 h-3.5" />
                       )}
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800 leading-snug">
+
+                    {/* Text block — takes remaining space, truncates */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2 break-words">
                         {act.description}
                       </p>
-                      <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-wide font-medium">
-                        By {act.operator || "System"}
-                      </p>
+                      <div className="flex items-center justify-between gap-2 mt-1 flex-wrap">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium truncate">
+                          By {act.operator || "System"}
+                        </p>
+                        <span className="text-gray-400 text-[10px] whitespace-nowrap font-medium shrink-0">
+                          {new Date(act.log_date).toLocaleDateString([], {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <span className="text-gray-400 text-[10px] whitespace-nowrap font-medium">
-                    {new Date(act.log_date).toLocaleDateString([], {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </span>
-                </div>
-              ))
+                ))
             )}
           </div>
         </div>
@@ -480,14 +489,13 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Dynamic Mixed Operations & Due Dates Calendar */}
+        {/* Calendar */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#EAEFEA] min-h-[340px] lg:h-[380px] flex flex-col">
           <div className="flex items-center justify-between mb-5 pb-3 border-b border-gray-50">
             <div className="flex items-center gap-2">
               <CalendarIcon className="h-4 w-4 text-[#4A5D4E]" />
               <h3 className="font-bold text-[#313c34]">Operations & Dues</h3>
             </div>
-            {/* Minimalist Legend Indicators */}
             <div className="flex gap-3 text-[9px] font-bold text-gray-400">
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>{" "}
@@ -531,13 +539,11 @@ export default function Dashboard() {
             {(() => {
               const year = calendarDate.getFullYear();
               const month = calendarDate.getMonth();
-
               const todayObj = new Date();
               const isCurrentMonthMatch =
                 todayObj.getFullYear() === year &&
                 todayObj.getMonth() === month;
               const todayDate = todayObj.getDate();
-
               const daysInMonth = new Date(year, month + 1, 0).getDate();
               const firstDayOfMonth = new Date(year, month, 1).getDay();
 
@@ -575,7 +581,6 @@ export default function Dashboard() {
                   dashboardData?.calendarEvents?.due_dates,
                   day,
                 );
-
                 const hasInterment = intermentsToday.length > 0;
                 const hasDueDate = dueDatesToday.length > 0;
 
@@ -606,7 +611,6 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Unified Context Tooltip for Interments and Account Due Dates */}
                     {(hasInterment || hasDueDate) && (
                       <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-[#313c34] text-white text-[10px] rounded-xl p-3 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50 shadow-xl space-y-2">
                         {hasInterment && (
@@ -660,20 +664,20 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Mixed Transactions & Payments Feed */}
+        {/* ── Recent Transactions — last 10 days, 8 per page ── */}
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-[#EAEFEA] overflow-hidden flex flex-col min-h-[320px]">
           <div className="p-5 border-b border-[#EAEFEA] flex justify-between items-center">
-            <h3 className="font-bold text-[#313c34] flex items-center gap-2">
-              <FileText className="h-4 w-4 text-[#4A5D4E]" /> Recent
-              Transactions & Payments
-            </h3>
-            <button
-              onClick={() => navigate("/transactions")}
-              className="text-xs font-bold text-[#4A5D4E] hover:text-[#313c34] transition-colors"
-            >
-              View Matrix
-            </button>
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-[#4A5D4E]" />
+              <h3 className="font-bold text-[#313c34]">
+                Recent Transactions & Payments
+              </h3>
+            </div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+              Last {TRANSACTIONS_MAX_DAYS} days
+            </span>
           </div>
+
           <div className="overflow-x-auto flex-1 custom-scrollbar">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-[#F4F6F4] text-[#4A5D4E] text-[10px] uppercase tracking-wider font-bold">
@@ -696,102 +700,155 @@ export default function Dashboard() {
                       Querying data sequence...
                     </td>
                   </tr>
-                ) : !dashboardData?.recentTransactions?.length ? (
+                ) : paginatedTransactions.length === 0 ? (
                   <tr>
                     <td
                       colSpan={6}
                       className="text-center py-12 text-gray-400 font-medium text-sm"
                     >
-                      No transactions compiled.
+                      No transactions in the last {TRANSACTIONS_MAX_DAYS} days.
                     </td>
                   </tr>
                 ) : (
-                  dashboardData.recentTransactions.map(
-                    (item: any, idx: number) => {
-                      const isPayment = item.record_type === "payment";
-                      return (
-                        <tr
-                          key={idx}
-                          className={`transition-colors cursor-pointer ${isPayment ? "bg-[#fcfcfc]/60 hover:bg-[#f3f5f3]" : "hover:bg-[#FDFCF8]"}`}
-                          onClick={() => navigate(`/clients/${item.client_id}`)}
-                        >
-                          <td className="px-6 py-4 font-medium text-xs text-gray-500">
-                            {new Date(item.date).toLocaleDateString()}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col gap-1">
-                              <span
-                                className={`font-bold ${isPayment ? "text-emerald-700" : "text-[#313c34]"}`}
-                              >
-                                {item.professional_receipt || "N/A"}
-                              </span>
-                              {!isPayment && (
-                                <span className="text-[10px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 w-max font-mono">
-                                  {item.sales_invoice || "N/A"}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-[#313c34] text-xs">
-                                {item.client_name}
-                              </span>
-                              <span className="text-[10px] text-gray-400 mt-0.5">
-                                {item.plot || "Unassigned"} (
-                                {item.plot_type || "N/A"})
-                              </span>
-                            </div>
-                          </td>
-                          <td
-                            className={`px-6 py-4 text-right font-bold ${isPayment ? "text-emerald-600" : "text-[#4A5D4E]"}`}
-                          >
-                            ₱{" "}
-                            {Number(item.amount || 0).toLocaleString(
-                              undefined,
-                              { minimumFractionDigits: 2 },
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-right font-bold">
-                            {isPayment ? (
-                              <span className="text-gray-300 italic text-xs">
-                                —
-                              </span>
-                            ) : (
-                              <span className="text-orange-600">
-                                ₱{" "}
-                                {Number(
-                                  item.remaining_balance || 0,
-                                ).toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-center">
+                  paginatedTransactions.map((item: any, idx: number) => {
+                    const isPayment = item.record_type === "payment";
+                    return (
+                      <tr
+                        key={idx}
+                        className={`transition-colors cursor-pointer ${isPayment ? "bg-[#fcfcfc]/60 hover:bg-[#f3f5f3]" : "hover:bg-[#FDFCF8]"}`}
+                        onClick={() => navigate(`/clients/${item.client_id}`)}
+                      >
+                        <td className="px-6 py-4 font-medium text-xs text-gray-500">
+                          {new Date(item.date).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-1">
                             <span
-                              className={`px-3 py-1 rounded-md text-[10px] uppercase tracking-wider font-bold border ${
-                                isPayment ||
-                                item.status?.toLowerCase() === "cleared" ||
-                                item.status?.toLowerCase() === "paid"
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                                  : "bg-amber-50 text-amber-700 border-amber-100"
-                              }`}
+                              className={`font-bold ${isPayment ? "text-emerald-700" : "text-[#313c34]"}`}
                             >
-                              {item.status || "Pending"}
+                              {item.professional_receipt || "N/A"}
                             </span>
-                          </td>
-                        </tr>
-                      );
-                    },
-                  )
+                            {!isPayment && (
+                              <span className="text-[10px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5 w-max font-mono">
+                                {item.sales_invoice || "N/A"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-[#313c34] text-xs">
+                              {item.client_name}
+                            </span>
+                            <span className="text-[10px] text-gray-400 mt-0.5">
+                              {item.plot || "Unassigned"} (
+                              {item.plot_type || "N/A"})
+                            </span>
+                          </div>
+                        </td>
+                        <td
+                          className={`px-6 py-4 text-right font-bold ${isPayment ? "text-emerald-600" : "text-[#4A5D4E]"}`}
+                        >
+                          ₱{" "}
+                          {Number(item.amount || 0).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="px-6 py-4 text-right font-bold">
+                          {isPayment ? (
+                            <span className="text-gray-300 italic text-xs">
+                              —
+                            </span>
+                          ) : (
+                            <span className="text-orange-600">
+                              ₱{" "}
+                              {Number(
+                                item.remaining_balance || 0,
+                              ).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                              })}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span
+                            className={`px-3 py-1 rounded-md text-[10px] uppercase tracking-wider font-bold border ${
+                              isPayment ||
+                              item.status?.toLowerCase() === "cleared" ||
+                              item.status?.toLowerCase() === "paid"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                : "bg-amber-50 text-amber-700 border-amber-100"
+                            }`}
+                          >
+                            {item.status || "Pending"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Pagination footer */}
+          {!isLoading && filteredTransactions.length > 0 && (
+            <div className="px-6 py-3 border-t border-[#EAEFEA] flex items-center justify-between bg-[#fafaf8]">
+              <p className="text-[11px] text-gray-400 font-medium">
+                Showing{" "}
+                <span className="font-bold text-gray-600">
+                  {(txPage - 1) * TRANSACTIONS_PER_PAGE + 1}–
+                  {Math.min(
+                    txPage * TRANSACTIONS_PER_PAGE,
+                    filteredTransactions.length,
+                  )}
+                </span>{" "}
+                of{" "}
+                <span className="font-bold text-gray-600">
+                  {filteredTransactions.length}
+                </span>
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setTxPage((p) => Math.max(1, p - 1))}
+                  disabled={txPage === 1}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-500"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+
+                {/* Page number pills */}
+                {Array.from({ length: totalTxPages }, (_, i) => i + 1).map(
+                  (pg) => (
+                    <button
+                      key={pg}
+                      onClick={() => setTxPage(pg)}
+                      className={`w-7 h-7 rounded-lg text-xs font-bold transition-colors ${
+                        pg === txPage
+                          ? "bg-[#4A5D4E] text-white"
+                          : "text-gray-500 hover:bg-gray-100"
+                      }`}
+                    >
+                      {pg}
+                    </button>
+                  ),
+                )}
+
+                <button
+                  onClick={() =>
+                    setTxPage((p) => Math.min(totalTxPages, p + 1))
+                  }
+                  disabled={txPage === totalTxPages}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-gray-500"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Polished Overdue Accounts Notice Card (Hidden Until Hover) */}
+        {/* Overdue Accounts */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#EAEFEA] flex flex-col justify-between min-h-[320px]">
           <div className="flex-1 flex flex-col overflow-hidden">
             <h3 className="font-bold text-[#313c34] mb-1 flex items-center gap-2">
@@ -853,7 +910,6 @@ export default function Dashboard() {
                       <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-amber-500 transition-colors shrink-0" />
                     </div>
 
-                    {/* HIDDEN by default, smoothly animated into view on hover */}
                     <div className="max-h-0 opacity-0 overflow-hidden group-hover:max-h-12 group-hover:opacity-100 group-hover:mt-3 transition-all duration-300 ease-in-out flex items-center gap-2 border-t border-dashed border-transparent group-hover:border-amber-100 group-hover:pt-2 text-[10px] font-mono text-gray-500">
                       <Receipt className="w-3 h-3 text-amber-600 shrink-0" />
                       <span className="truncate">
@@ -879,15 +935,6 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-
-          {dashboardData?.overdueNotices?.length > 0 && (
-            <button
-              onClick={() => navigate("/clients")}
-              className="w-full mt-4 text-center font-bold text-xs bg-amber-50/50 text-amber-800 hover:bg-amber-100/80 py-3 rounded-xl transition-colors border border-amber-100 shrink-0"
-            >
-              Review All Delinquent Pipelines
-            </button>
-          )}
         </div>
       </div>
 

@@ -1,7 +1,16 @@
-import { Plus, Search, FileText, CreditCard } from "lucide-react";
+import { useState } from "react";
+import {
+  Plus,
+  Search,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+
+const PAGE_SIZE = 10;
 
 interface TransactionHistoryTableProps {
   transactions: any[];
@@ -24,6 +33,27 @@ export default function TransactionHistoryTable({
   onAction,
   onPrClick,
 }: TransactionHistoryTableProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(transactions.length / PAGE_SIZE));
+
+  // Reset to page 1 when filters/search change by deriving page safely
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedTransactions = transactions.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    setCurrentPage(1);
+  };
+
+  const handleFilterChange = (val: string) => {
+    setStatusFilter(val);
+    setCurrentPage(1);
+  };
+
   return (
     <Card className="border-none shadow-sm rounded-xl overflow-hidden bg-white">
       <CardHeader className="border-b border-gray-100 px-6 md:px-8 py-6">
@@ -49,17 +79,17 @@ export default function TransactionHistoryTable({
               <Input
                 placeholder="Search PR or SI..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9 h-10 w-full sm:w-[220px] text-sm border-gray-200 shadow-sm"
               />
             </div>
             <select
               className="h-10 px-3 py-1.5 text-sm border rounded-md border-gray-200 bg-white shadow-sm focus:ring-2 focus:ring-[#4a5a4a] focus:outline-none"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => handleFilterChange(e.target.value)}
             >
               <option value="All">All Types</option>
-              <option value="Transaction">Transactions Only</option>{" "}
+              <option value="Transaction">Transactions Only</option>
               <option value="Completed">Completed Plots</option>
               <option value="Pending">Pending Plots</option>
               <option value="Payment">Payments Only</option>
@@ -84,11 +114,8 @@ export default function TransactionHistoryTable({
               </tr>
             </thead>
             <tbody className="text-sm">
-              {transactions.map((item: any) => {
-                // Dynamically detect if this row item is a Plot Purchase or a General Payment
+              {paginatedTransactions.map((item: any) => {
                 const isPayment = !!item.payment_id;
-
-                // 1. Extract dynamic row values based on ledger entry type
                 const itemDate = isPayment
                   ? item.payment_date
                   : item.date_created || item.transaction_date;
@@ -109,27 +136,19 @@ export default function TransactionHistoryTable({
                         : "hover:bg-[#fcfaf7]"
                     }`}
                   >
-                    {/* Date */}
                     <td className="p-4 text-gray-600 font-medium text-xs">
                       {new Date(itemDate || Date.now()).toLocaleDateString(
                         "en-US",
-                        {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        },
+                        { year: "numeric", month: "short", day: "numeric" },
                       )}
                     </td>
 
-                    {/* PR Number */}
                     <td className="p-4">
                       {isPayment ? (
-                        // Render as plain text for Payments
                         <span className="font-bold text-slate-600">
                           {item.professional_receipt || "N/A"}
                         </span>
                       ) : (
-                        // Render as a clickable button for Transactions
                         <button
                           onClick={() => onPrClick(item)}
                           className="font-bold text-[#4a5a4a] underline decoration-dotted underline-offset-4 hover:text-[#3a4a3f] transition-colors"
@@ -140,15 +159,12 @@ export default function TransactionHistoryTable({
                       )}
                     </td>
 
-                    {/* SI Number */}
                     <td className="p-4">
                       <span className="bg-gray-100 px-2 py-1 rounded text-xs text-gray-600 font-mono">
                         {item.sales_invoice || "N/A"}
                       </span>
                     </td>
 
-                    {/* Plot Reference */}
-                    {/* Plot Reference */}
                     <td className="p-4 text-gray-800 font-medium">
                       {item.plot_id || "N/A"}{" "}
                       <span className="text-gray-400 font-normal text-xs ml-1">
@@ -156,7 +172,6 @@ export default function TransactionHistoryTable({
                       </span>
                     </td>
 
-                    {/* Amount / Price */}
                     <td
                       className={`p-4 text-right font-bold ${isPayment ? "text-emerald-600" : "text-gray-800"}`}
                     >
@@ -166,7 +181,6 @@ export default function TransactionHistoryTable({
                       })}
                     </td>
 
-                    {/* Balance */}
                     <td className="p-4 text-right font-bold">
                       {isPayment ? (
                         <span className="text-gray-400 font-normal italic text-xs">
@@ -183,7 +197,6 @@ export default function TransactionHistoryTable({
                       )}
                     </td>
 
-                    {/* Status Badge */}
                     <td className="p-4">
                       {isPayment ? (
                         <span className="px-2.5 py-1 text-[11px] rounded-full font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700">
@@ -204,7 +217,6 @@ export default function TransactionHistoryTable({
                       )}
                     </td>
 
-                    {/* Actions Column */}
                     <td className="p-4 text-center">
                       {isIntermentAllowed ? (
                         <Button
@@ -224,12 +236,86 @@ export default function TransactionHistoryTable({
               })}
             </tbody>
           </table>
+
           {transactions.length === 0 && (
             <div className="text-center p-8 text-gray-400 italic text-sm bg-gray-50">
               No transactions or payments match your search/filter criteria.
             </div>
           )}
         </div>
+
+        {/* Pagination */}
+        {transactions.length > 0 && (
+          <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
+            <p className="text-xs text-gray-400 font-medium">
+              Showing{" "}
+              <span className="text-gray-600 font-bold">
+                {(safePage - 1) * PAGE_SIZE + 1}–
+                {Math.min(safePage * PAGE_SIZE, transactions.length)}
+              </span>{" "}
+              of{" "}
+              <span className="text-gray-600 font-bold">
+                {transactions.length}
+              </span>{" "}
+              entries
+            </p>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="h-8 w-8 flex items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#4a5a4a] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(
+                  (p) =>
+                    p === 1 || p === totalPages || Math.abs(p - safePage) <= 1,
+                )
+                .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                  if (idx > 0 && p - (arr[idx - 1] as number) > 1) {
+                    acc.push("...");
+                  }
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, idx) =>
+                  p === "..." ? (
+                    <span
+                      key={`ellipsis-${idx}`}
+                      className="h-8 w-8 flex items-center justify-center text-gray-300 text-xs"
+                    >
+                      ···
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p as number)}
+                      className={`h-8 w-8 flex items-center justify-center rounded-md text-xs font-bold transition-colors ${
+                        safePage === p
+                          ? "bg-[#4a5a4a] text-white shadow-sm"
+                          : "border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#4a5a4a]"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
+
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={safePage === totalPages}
+                className="h-8 w-8 flex items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#4a5a4a] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
